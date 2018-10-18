@@ -1,9 +1,4 @@
-// Copyright (c) 2016 The btcsuite developers
-// Copyright (c) 2017 The Decred developers
-// Use of this source code is governed by an ISC
-// license that can be found in the LICENSE file.
-
-package rpctest
+package regressiontest
 
 import (
 	"reflect"
@@ -11,6 +6,10 @@ import (
 
 	"github.com/decred/dcrd/dcrjson"
 	"github.com/decred/dcrd/rpcclient"
+	"fmt"
+	"testing"
+	"strconv"
+	"github.com/decred/dcrd/rpctest/testharness"
 )
 
 // JoinType is an enum representing a particular type of "node join". A node
@@ -34,7 +33,7 @@ const (
 // passed JoinType. This function be used to to ensure all active test
 // harnesses are at a consistent state before proceeding to an assertion or
 // check within rpc tests.
-func JoinNodes(nodes []*Harness, joinType JoinType) error {
+func JoinNodes(nodes []*testharness.Harness, joinType JoinType) error {
 	switch joinType {
 	case Blocks:
 		return syncBlocks(nodes)
@@ -45,12 +44,12 @@ func JoinNodes(nodes []*Harness, joinType JoinType) error {
 }
 
 // syncMempools blocks until all nodes have identical mempools.
-func syncMempools(nodes []*Harness) error {
+func syncMempools(nodes []*testharness.Harness) error {
 	poolsMatch := false
 
 	for !poolsMatch {
 	retry:
-		firstPool, err := nodes[0].Node.GetRawMempool(dcrjson.GRMAll)
+		firstPool, err := nodes[0].DcrdRPCClient().GetRawMempool(dcrjson.GRMAll)
 		if err != nil {
 			return err
 		}
@@ -59,7 +58,7 @@ func syncMempools(nodes []*Harness) error {
 		// first node, then we're done. Otherwise, drop back to the top
 		// of the loop and retry after a short wait period.
 		for _, node := range nodes[1:] {
-			nodePool, err := node.Node.GetRawMempool(dcrjson.GRMAll)
+			nodePool, err := node.DcrdRPCClient().GetRawMempool(dcrjson.GRMAll)
 			if err != nil {
 				return err
 			}
@@ -77,7 +76,7 @@ func syncMempools(nodes []*Harness) error {
 }
 
 // syncBlocks blocks until all nodes report the same block height.
-func syncBlocks(nodes []*Harness) error {
+func syncBlocks(nodes []*testharness.Harness) error {
 	blocksMatch := false
 
 	for !blocksMatch {
@@ -85,7 +84,7 @@ func syncBlocks(nodes []*Harness) error {
 		blockHeights := make(map[int64]struct{})
 
 		for _, node := range nodes {
-			blockHeight, err := node.Node.GetBlockCount()
+			blockHeight, err := node.DcrdRPCClient().GetBlockCount()
 			if err != nil {
 				return err
 			}
@@ -107,25 +106,25 @@ func syncBlocks(nodes []*Harness) error {
 // harness and the "to" harness.  The connection made is flagged as persistent,
 // therefore in the case of disconnects, "from" will attempt to reestablish a
 // connection to the "to" harness.
-func ConnectNode(from *Harness, to *Harness) error {
-	peerInfo, err := from.Node.GetPeerInfo()
+func ConnectNode(from *testharness.Harness, to *testharness.Harness) error {
+	peerInfo, err := from.DcrdRPCClient().GetPeerInfo()
 	if err != nil {
 		return err
 	}
 	numPeers := len(peerInfo)
 
-	targetAddr := to.node.config.listen
-	if err := from.Node.AddNode(targetAddr, rpcclient.ANAdd); err != nil {
+	targetAddr := to.P2PAddress()
+	if err := from.DcrdRPCClient().AddNode(targetAddr, rpcclient.ANAdd); err != nil {
 		return err
 	}
 
 	// Block until a new connection has been established.
-	peerInfo, err = from.Node.GetPeerInfo()
+	peerInfo, err = from.DcrdRPCClient().GetPeerInfo()
 	if err != nil {
 		return err
 	}
 	for len(peerInfo) <= numPeers {
-		peerInfo, err = from.Node.GetPeerInfo()
+		peerInfo, err = from.DcrdRPCClient().GetPeerInfo()
 		if err != nil {
 			return err
 		}
@@ -134,31 +133,48 @@ func ConnectNode(from *Harness, to *Harness) error {
 	return nil
 }
 
-// TearDownAll tears down all active test harnesses.
-func TearDownAll() error {
-	harnessStateMtx.Lock()
-	defer harnessStateMtx.Unlock()
-
-	for _, harness := range testInstances {
-		if err := harness.TearDown(); err != nil {
-			return err
-		}
+// Create a test chain with the desired number of mature coinbase outputs
+func generateTestChain(numToGenerate uint32, node *rpcclient.Client) error {
+	fmt.Printf("Generating %v blocks...\n", numToGenerate)
+	_, err := node.Generate(numToGenerate)
+	if err != nil {
+		return err
 	}
-
+	fmt.Println("Block generation complete.")
 	return nil
 }
 
-// ActiveHarnesses returns a slice of all currently active test harnesses. A
-// test harness if considered "active" if it has been created, but not yet torn
-// down.
-func ActiveHarnesses() []*Harness {
-	harnessStateMtx.RLock()
-	defer harnessStateMtx.RUnlock()
-
-	activeNodes := make([]*Harness, 0, len(testInstances))
-	for _, harness := range testInstances {
-		activeNodes = append(activeNodes, harness)
+func assertConnectedTo(t *testing.T, nodeA *testharness.Harness, nodeB *testharness.Harness) {
+	nodeAPeers, err := nodeA.DcrdRPCClient().GetPeerInfo()
+	if err != nil {
+		t.Fatalf("unable to get nodeA's peer info")
 	}
 
-	return activeNodes
+	nodeAddr := nodeB.P2PAddress()
+	addrFound := false
+	for _, peerInfo := range nodeAPeers {
+		if peerInfo.Addr == nodeAddr {
+			addrFound = true
+			break
+		}
+	}
+
+	if !addrFound {
+		t.Fatal("nodeA not connected to nodeB")
+	}
+}
+
+// Waits for wallet to sync to the target height
+func syncWalletTo(rpcClient *rpcclient.Client, desiredHeight int64) (int64, error) {
+	var count int64 = 0
+	var err error = nil
+	for count != desiredHeight {
+		//rpctest.Sleep(100)
+		count, err = rpcClient.GetBlockCount()
+		if err != nil {
+			return -1, err
+		}
+		fmt.Println("   sync to: " + strconv.FormatInt(count, 10))
+	}
+	return count, nil
 }
