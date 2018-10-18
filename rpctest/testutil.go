@@ -115,7 +115,7 @@ func MakeDirs(dir string) {
 
 func DeleteFile(file string) {
 	fmt.Println("delete: " + file)
-	err := os.Remove(file)
+	err := os.RemoveAll(file)
 	CheckTestSetupMalfunction(err)
 }
 

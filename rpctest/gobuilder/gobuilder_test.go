@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"fmt"
 	"os"
+	"github.com/decred/dcrd/rpctest"
 )
 
 // TestGoBuider builds current project executable
@@ -28,4 +29,6 @@ func TestGoBuider(t *testing.T) {
 	builder := NewGoBuider(cfg)
 
 	builder.Build()
+	
+	rpctest.DeleteFile(testWorkingDir)
 }
