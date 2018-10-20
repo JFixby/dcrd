@@ -4,12 +4,20 @@
 
 package dcrtest
 
+// disposableAssetsList keeps track of all assets and resources
+// created by test setup execution for the following disposal.
+//
+// This includes removing all temporary directories,
+// and shutting down any created processes.
+var disposableAssetsList []DisposableAsset
+
+// RegisterDisposableAsset registers disposable asset
 func RegisterDisposableAsset(a DisposableAsset) {
-	DisposableAssetsList = append(DisposableAssetsList, a)
+	disposableAssetsList = append(disposableAssetsList, a)
 }
 
-var DisposableAssetsList []DisposableAsset
-
+// DisposableAsset is a handler for disposable resources
 type DisposableAsset interface {
+	// Dispose called by test setup before exit
 	Dispose()
 }

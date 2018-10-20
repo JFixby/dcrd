@@ -2,8 +2,8 @@ package testharness
 
 import (
 	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/rpcclient"
 	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/rpcclient"
 )
 
 type DcrdNode interface {

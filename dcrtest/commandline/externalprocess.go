@@ -11,10 +11,11 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrd/rpctest"
 )
 
+// ExternalProcess is a helper class wrapping command line execution
 type ExternalProcess struct {
 	CommandName string
 	Arguments   []string
@@ -26,19 +27,22 @@ type ExternalProcess struct {
 	runningCommand *exec.Cmd
 }
 
+// FullConsoleCommand returns full console command string
 func (p *ExternalProcess) FullConsoleCommand() string {
 	cmd := p.runningCommand
 	args := strings.Join(cmd.Args[1:], " ")
 	return cmd.Path + " " + args
 }
 
+// ClearArguments clears args list
 func (p *ExternalProcess) ClearArguments() {
 	p.Arguments = []string{}
 }
 
+// Launch executes external process
 func (process *ExternalProcess) Launch(debugOutput bool) {
 	if process.isRunning {
-		rpctest.ReportTestSetupMalfunction(errors.Errorf("Process is already running: %v", process.runningCommand))
+		dcrtest.ReportTestSetupMalfunction(errors.Errorf("Process is already running: %v", process.runningCommand))
 	}
 	process.isRunning = true
 
@@ -52,7 +56,7 @@ func (process *ExternalProcess) Launch(debugOutput bool) {
 		cmd.Stderr = os.Stderr
 	}
 	err := cmd.Start()
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 
 	if process.WaitForExit {
 		process.waitForExit()
@@ -67,7 +71,7 @@ func (process *ExternalProcess) Launch(debugOutput bool) {
 // it will persist unless explicitly killed.
 func (process *ExternalProcess) Stop() error {
 	if !process.isRunning {
-		rpctest.ReportTestSetupMalfunction(errors.Errorf("Process is not running: %v", process.runningCommand))
+		dcrtest.ReportTestSetupMalfunction(errors.Errorf("Process is not running: %v", process.runningCommand))
 	}
 	process.isRunning = false
 
@@ -76,13 +80,15 @@ func (process *ExternalProcess) Stop() error {
 	return killProcess(process, os.Stdout)
 }
 
+// waitForExit waits for ext process to exit
 func (process *ExternalProcess) waitForExit() {
 	err := process.runningCommand.Wait()
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 	process.isRunning = false
 	ExternalProcesses.remove(process)
 }
 
+// IsRunning indicates when ext process is working
 func (process *ExternalProcess) IsRunning() bool {
 	return process.isRunning
 }

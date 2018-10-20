@@ -1,8 +1,8 @@
 package regressiontest
 
 import (
-	"testing"
 	"bytes"
+	"testing"
 )
 
 func TestGetBestBlock(t *testing.T) {

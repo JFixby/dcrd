@@ -2,8 +2,8 @@ package regressiontest
 
 import (
 	"github.com/decred/dcrd/dcrutil"
-	"testing"
 	"github.com/decred/dcrd/rpctest/testharness"
+	"testing"
 )
 
 func TestMemWalletReorg(t *testing.T) {

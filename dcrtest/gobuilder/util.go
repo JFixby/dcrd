@@ -5,9 +5,9 @@
 package gobuilder
 
 import (
-	"runtime"
-	"github.com/decred/dcrd/rpctest"
 	"fmt"
+	"github.com/decred/dcrd/dcrtest"
+	"runtime"
 	"strings"
 )
 
@@ -15,7 +15,7 @@ func DetermineProjectPackagePath(projectName string) string {
 	// Determine import path of this package.
 	_, launchDir, _, ok := runtime.Caller(1)
 	if !ok {
-		rpctest.CheckTestSetupMalfunction(fmt.Errorf("Cannot get project path, launch dir is: %v ", launchDir))
+		dcrtest.CheckTestSetupMalfunction(fmt.Errorf("Cannot get project path, launch dir is: %v ", launchDir))
 	}
 	sep := "/"
 	steps := strings.Split(launchDir, sep)
@@ -25,6 +25,6 @@ func DetermineProjectPackagePath(projectName string) string {
 			return pkgPath
 		}
 	}
-	rpctest.CheckTestSetupMalfunction(fmt.Errorf("Cannot get project path, launch dir is: %v ", launchDir))
+	dcrtest.CheckTestSetupMalfunction(fmt.Errorf("Cannot get project path, launch dir is: %v ", launchDir))
 	return ""
 }

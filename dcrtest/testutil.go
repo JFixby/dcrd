@@ -40,11 +40,9 @@ func ReportTestSetupMalfunction(malfunction error) error {
 		return ReportTestSetupMalfunction(fmt.Errorf("no error provided"))
 	}
 
-	//This includes removing all temporary directories,
-	// and shutting down any created processes.
 	fmt.Fprintln(os.Stderr, malfunction.Error())
 
-	for _, d := range DisposableAssetsList {
+	for _, d := range disposableAssetsList {
 		d.Dispose()
 	}
 

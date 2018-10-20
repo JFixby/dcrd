@@ -3,20 +3,20 @@ package memwallet
 import (
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/hdkeychain"
-	"github.com/decred/dcrd/wire"
-	"github.com/decred/dcrd/rpctest"
 	"github.com/decred/dcrd/rpctest/testharness"
+	"github.com/decred/dcrd/wire"
 )
 
 type MemWalletFactory struct {
 }
 
 func (f *MemWalletFactory) NewWallet(cfg *testharness.DcrdWalletConfig) testharness.DcrWallet {
-	rpctest.AssertNotNil("ActiveNet", cfg.ActiveNet)
+	dcrtest.AssertNotNil("ActiveNet", cfg.ActiveNet)
 	w, e := newMemWallet(cfg.ActiveNet, cfg.Seed)
-	rpctest.CheckTestSetupMalfunction(e)
+	dcrtest.CheckTestSetupMalfunction(e)
 	return w
 }
 

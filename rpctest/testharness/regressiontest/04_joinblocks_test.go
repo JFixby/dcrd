@@ -1,9 +1,9 @@
 package regressiontest
 
 import (
+	"github.com/decred/dcrd/rpctest/testharness"
 	"testing"
 	"time"
-	"github.com/decred/dcrd/rpctest/testharness"
 )
 
 func TestJoinBlocks(t *testing.T) {

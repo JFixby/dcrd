@@ -4,12 +4,12 @@ import (
 	"reflect"
 	"time"
 
+	"fmt"
 	"github.com/decred/dcrd/dcrjson"
 	"github.com/decred/dcrd/rpcclient"
-	"fmt"
-	"testing"
-	"strconv"
 	"github.com/decred/dcrd/rpctest/testharness"
+	"strconv"
+	"testing"
 )
 
 // JoinType is an enum representing a particular type of "node join". A node

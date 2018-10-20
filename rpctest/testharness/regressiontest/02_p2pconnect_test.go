@@ -1,8 +1,8 @@
 package regressiontest
 
 import (
-	"testing"
 	"github.com/decred/dcrd/rpctest/testharness"
+	"testing"
 )
 
 func TestP2PConnect(t *testing.T) {

@@ -5,16 +5,16 @@ package dcrdtestnode
 
 import (
 	"fmt"
-	"path/filepath"
 	"io/ioutil"
+	"path/filepath"
 
-	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrd/rpcclient"
-	"github.com/decred/dcrd/rpctest"
-	"github.com/decred/dcrd/rpctest/commandline"
-	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/chaincfg"
+	"github.com/decred/dcrd/dcrtest"
+	"github.com/decred/dcrd/dcrtest/commandline"
+	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/rpcclient"
 	"github.com/decred/dcrd/rpctest/testharness"
+	"github.com/decred/dcrwallet/errors"
 )
 
 type DcrdTestServer struct {
@@ -44,7 +44,7 @@ func (n *DcrdTestServer) RPCConnectionConfig() *rpcclient.ConnConfig {
 	file := n.CertFile()
 	fmt.Println("reading: " + file)
 	cert, err := ioutil.ReadFile(file)
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 
 	return &rpcclient.ConnConfig{
 		Host:                 n.rpcListen,
@@ -86,11 +86,11 @@ func (server *DcrdTestServer) IsRunning() bool {
 // Stop interrupts the running dcrd process.
 func (n *DcrdTestServer) Stop() {
 	if !n.IsRunning() {
-		rpctest.ReportTestSetupMalfunction(errors.Errorf("DcrdTestServer is not running"))
+		dcrtest.ReportTestSetupMalfunction(errors.Errorf("DcrdTestServer is not running"))
 	}
 	fmt.Println("Stop DCRD process...")
 	err := n.externalProcess.Stop()
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 }
 
 func (n *DcrdTestServer) cookArguments(extraArguments map[string]interface{}) map[string]interface{} {
@@ -134,7 +134,7 @@ func networkFor(net *chaincfg.Params) string {
 	}
 
 	// should never reach this line, report violation
-	rpctest.ReportTestSetupMalfunction(fmt.Errorf("unknown network: %v ", net))
+	dcrtest.ReportTestSetupMalfunction(fmt.Errorf("unknown network: %v ", net))
 	return ""
 }
 
@@ -157,16 +157,16 @@ func (server *DcrdTestServer) Shutdown() {
 	server.Stop()
 
 	// Delete files, RPC servers will recreate them on the next launch sequence
-	rpctest.DeleteFile(server.CertFile())
-	rpctest.DeleteFile(server.KeyFile())
+	dcrtest.DeleteFile(server.CertFile())
+	dcrtest.DeleteFile(server.KeyFile())
 }
 
 func (n *DcrdTestServer) Launch(args *testharness.DcrdLaunchArgs) {
 	if n.IsRunning() {
-		rpctest.ReportTestSetupMalfunction(errors.Errorf("DcrdTestServer is already running"))
+		dcrtest.ReportTestSetupMalfunction(errors.Errorf("DcrdTestServer is already running"))
 	}
 	fmt.Println("Start DCRD process...")
-	rpctest.MakeDirs(n.appDir)
+	dcrtest.MakeDirs(n.appDir)
 
 	n.miningAddress = args.MiningAddress
 
@@ -177,7 +177,7 @@ func (n *DcrdTestServer) Launch(args *testharness.DcrdLaunchArgs) {
 	)
 	n.externalProcess.Launch(args.DebugOutput)
 	// DCRD RPC instance will create a cert file when it is ready for incoming calls
-	rpctest.WaitForFile(n.CertFile(), 7)
+	dcrtest.WaitForFile(n.CertFile(), 7)
 
 	fmt.Println("Connect to DCRD RPC...")
 	cfg := n.RPCConnectionConfig()

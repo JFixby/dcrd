@@ -14,14 +14,14 @@ import (
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrec/secp256k1"
+	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/hdkeychain"
 	"github.com/decred/dcrd/rpcclient"
+	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
-	"github.com/decred/dcrd/rpctest"
 	"time"
-	"github.com/decred/dcrd/rpctest/testharness"
 )
 
 const chainUpdateSignal = "chainUpdateSignal"
@@ -119,7 +119,7 @@ func (wallet *InMemoryWallet) Launch(args *testharness.DcrWalletLaunchArgs) erro
 	//handlers.OnClientConnected = wallet.onDcrdConnect
 
 	wallet.dcrdRpc = testharness.NewRPCConnection(args.DcrdRPCConfig, 5, handlers)
-	rpctest.AssertNotNil("dcrdRpc", wallet.dcrdRpc)
+	dcrtest.AssertNotNil("dcrdRpc", wallet.dcrdRpc)
 
 	// Filter transactions that pay to the coinbase associated with the
 	// wallet.
@@ -128,7 +128,7 @@ func (wallet *InMemoryWallet) Launch(args *testharness.DcrWalletLaunchArgs) erro
 	// Ensure dcrd properly dispatches our registered call-back for each new
 	// block. Otherwise, the InMemoryWallet won't function properly.
 	err := wallet.dcrdRpc.NotifyBlocks()
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 
 	go wallet.chainSyncer()
 	return nil
@@ -141,7 +141,7 @@ func (wallet *InMemoryWallet) updateTxFilter() {
 	}
 	//pin.D("filterAddrs", filterAddrs)
 	err := wallet.dcrdRpc.LoadTxFilter(true, filterAddrs, nil)
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 }
 
 func (w *InMemoryWallet) Shutdown() {
@@ -156,7 +156,7 @@ func (w *InMemoryWallet) Sync() {
 	// Block until the wallet has fully synced up to the tip of the main
 	// chain.
 	_, height, err := w.dcrdRpc.GetBestBlock()
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 	ticker := time.NewTicker(time.Millisecond * 100)
 	for range ticker.C {
 		walletHeight := w.SyncedHeight()
@@ -211,8 +211,6 @@ func (m *InMemoryWallet) IngestBlock(header []byte, filteredTxns [][]byte) {
 		m.chainUpdateSignal <- chainUpdateSignal
 	}()
 }
-
-
 
 // chainSyncer is a goroutine dedicated to processing new blocks in order to
 // keep the wallet's utxo state up to date.
@@ -549,4 +547,3 @@ func (m *InMemoryWallet) ConfirmedBalance() dcrutil.Amount {
 
 	return balance
 }
-

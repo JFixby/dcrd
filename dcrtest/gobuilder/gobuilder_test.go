@@ -5,11 +5,11 @@
 package gobuilder
 
 import (
-	"testing"
-	"io/ioutil"
 	"fmt"
+	"github.com/decred/dcrd/dcrtest"
+	"io/ioutil"
 	"os"
-	"github.com/decred/dcrd/rpctest"
+	"testing"
 )
 
 // TestGoBuider builds current project executable
@@ -29,6 +29,6 @@ func TestGoBuider(t *testing.T) {
 	builder := NewGoBuider(cfg)
 
 	builder.Build()
-	
-	rpctest.DeleteFile(testWorkingDir)
+
+	dcrtest.DeleteFile(testWorkingDir)
 }

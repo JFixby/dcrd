@@ -5,9 +5,9 @@ package testharness
 
 import (
 	"fmt"
-	"os"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/rpcclient"
+	"os"
 )
 
 // Harness provides a unified platform for creating RPC-driven integration

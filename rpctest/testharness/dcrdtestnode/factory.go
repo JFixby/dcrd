@@ -1,12 +1,12 @@
 package dcrdtestnode
 
 import (
-	"github.com/decred/dcrd/rpctest"
-	"net"
-	"strconv"
-	"path/filepath"
-	"github.com/decred/dcrd/rpctest/commandline"
+	"github.com/decred/dcrd/dcrtest"
+	"github.com/decred/dcrd/dcrtest/commandline"
 	"github.com/decred/dcrd/rpctest/testharness"
+	"net"
+	"path/filepath"
+	"strconv"
 )
 
 type DcrdTestServerFactory struct {
@@ -16,9 +16,9 @@ type DcrdTestServerFactory struct {
 func (factory *DcrdTestServerFactory) NewNode(config *testharness.DcrdNodeConfig) testharness.DcrdNode {
 	exec := factory.DcrdExecutablePathProvider
 
-	rpctest.AssertNotNil("DcrdExecutablePathProvider", exec)
-	rpctest.AssertNotNil("WorkingDir", config.WorkingDir)
-	rpctest.AssertNotEmpty("WorkingDir", config.WorkingDir)
+	dcrtest.AssertNotNil("DcrdExecutablePathProvider", exec)
+	dcrtest.AssertNotNil("WorkingDir", config.WorkingDir)
+	dcrtest.AssertNotEmpty("WorkingDir", config.WorkingDir)
 
 	dcrd := &DcrdTestServer{
 		p2pAddress:                 net.JoinHostPort(config.P2PHost, strconv.Itoa(config.P2PPort)),

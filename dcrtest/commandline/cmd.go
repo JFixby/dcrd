@@ -38,6 +38,7 @@ func ArgumentsToStringArray(args map[string]interface{}) []string {
 	return result
 }
 
+// ArgumentsCopyTo helps to append commandline arguments from one map to another
 func ArgumentsCopyTo(from map[string]interface{}, to map[string]interface{}) map[string]interface{} {
 	for key, value := range from {
 		to[key] = value

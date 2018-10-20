@@ -1,13 +1,18 @@
+// Copyright (c) 2018 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package commandline
 
 import (
-	"os"
 	"fmt"
-	"github.com/decred/dcrd/rpctest"
+	"os"
+
+	"github.com/decred/dcrd/dcrtest"
 )
 
 func init() {
-	rpctest.RegisterDisposableAsset(ExternalProcesses)
+	dcrtest.RegisterDisposableAsset(ExternalProcesses)
 }
 
 // ExternalProcesses keeps track of all running processes
@@ -16,6 +21,7 @@ var ExternalProcesses = &ExternalProcessesList{
 	set: make(map[*ExternalProcess]bool),
 }
 
+// ExternalProcessesList implements DisposableAsset
 type ExternalProcessesList struct {
 	set map[*ExternalProcess]bool
 }
@@ -37,7 +43,7 @@ func VerifyNoExternalProcessLeftBehind() {
 					k.FullConsoleCommand(),
 				))
 		}
-		rpctest.ReportTestSetupMalfunction(
+		dcrtest.ReportTestSetupMalfunction(
 			fmt.Errorf(
 				"incorrect state: %v external processes left running ",
 				N,
@@ -63,10 +69,12 @@ func (list *ExternalProcessesList) emergencyKillAll() {
 	}
 }
 
+// add registers process
 func (list *ExternalProcessesList) add(process *ExternalProcess) {
 	list.set[process] = true
 }
 
+// remove deregisters process
 func (list *ExternalProcessesList) remove(process *ExternalProcess) {
 	delete(list.set, process)
 }

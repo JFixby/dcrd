@@ -1,12 +1,12 @@
 package regressiontest
 
 import (
-	"testing"
 	"github.com/decred/dcrd/dcrjson"
-	"time"
+	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
-	"github.com/decred/dcrd/rpctest/testharness"
+	"testing"
+	"time"
 )
 
 func TestJoinMempools(t *testing.T) {

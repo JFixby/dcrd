@@ -2,9 +2,9 @@ package regressiontest
 
 import (
 	"github.com/decred/dcrd/dcrutil"
-	"testing"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
+	"testing"
 )
 
 func TestMemWalletLockedOutputs(t *testing.T) {

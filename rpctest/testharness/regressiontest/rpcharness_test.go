@@ -6,25 +6,25 @@
 package regressiontest
 
 import (
-	"fmt"
-	"os"
-	"testing"
-	"github.com/decred/dcrd/rpctest"
-	"regexp"
-	"runtime"
-	"reflect"
 	"flag"
-	"github.com/decred/dcrd/rpctest/commandline"
-	"github.com/decred/dcrd/rpctest/gobuilder"
-	"path/filepath"
+	"fmt"
+	"github.com/decred/dcrd/chaincfg"
+	"github.com/decred/dcrd/dcrtest"
+	"github.com/decred/dcrd/dcrtest/commandline"
+	"github.com/decred/dcrd/dcrtest/gobuilder"
 	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/decred/dcrd/rpctest/testharness/dcrdtestnode"
-	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/rpctest/testharness/memwallet"
 	"github.com/jfixby/pin"
+	"os"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"runtime"
+	"testing"
 )
 
-type RpcTestCase func(t *testing.T)
+type dcrtestCase func(t *testing.T)
 
 // Default harness name
 const MainHarnessName = "main"
@@ -40,27 +40,26 @@ To use this function add the following code in your test:
 
 */
 func skipTest(t *testing.T) bool {
-	return rpctest.ListContainsString(skipTestsList, t.Name())
+	return dcrtest.ListContainsString(skipTestsList, t.Name())
 }
 
 // skipTestsList contains names of the tests mentioned in the testCasesToSkip
 var skipTestsList []string
 
 // testCasesToSkip, use it to mark tests for being skipped
-var testCasesToSkip = []RpcTestCase{
-}
+var testCasesToSkip = []dcrtestCase{}
 
 // Get function name from module name
 var funcInModulePath = regexp.MustCompile(`^.*\.(.*)$`)
 
 // Get the name of a function type
-func functionName(tc RpcTestCase) string {
+func functionName(tc dcrtestCase) string {
 	fncName := runtime.FuncForPC(reflect.ValueOf(tc).Pointer()).Name()
 	return funcInModulePath.ReplaceAllString(fncName, "$1")
 }
 
 // harnessPool stores and manages harnesses
-var harnessPool *rpctest.Pool
+var harnessPool *dcrtest.Pool
 
 // harnessWithZeroMOSpawner creates a local test harness
 // with only the genesis block.
@@ -135,7 +134,7 @@ func setupHarnessPool() {
 		ActiveNet:         Network,
 	}
 
-	harnessPool = rpctest.NewPool(harnessWith25MOSpawner)
+	harnessPool = dcrtest.NewPool(harnessWith25MOSpawner)
 
 	if !testing.Short() {
 		// Initialize harnesses
@@ -154,7 +153,7 @@ func setupWalletFactory() {
 func setupDcrNodeFactory() {
 	dcrdProjectGoPath := gobuilder.DetermineProjectPackagePath("dcrd")
 	tempBinDir := filepath.Join(WorkingDir, "bin")
-	rpctest.MakeDirs(tempBinDir)
+	dcrtest.MakeDirs(tempBinDir)
 
 	cfg := &gobuilder.GoBuiderConfig{
 		GoProjectPath:    dcrdProjectGoPath,
@@ -173,7 +172,7 @@ func setupDcrNodeFactory() {
 // teardown routines were properly performed.
 func verifyCorrectExit() {
 	if harnessPool.Size() != 0 {
-		rpctest.ReportTestSetupMalfunction(
+		dcrtest.ReportTestSetupMalfunction(
 			fmt.Errorf(
 				"incorrect state: " +
 					"Pool should be disposed before exit. " +
@@ -184,8 +183,8 @@ func verifyCorrectExit() {
 	commandline.VerifyNoExternalProcessLeftBehind()
 
 	file := WorkingDir
-	if rpctest.FileExists(file) {
-		rpctest.ReportTestSetupMalfunction(
+	if dcrtest.FileExists(file) {
+		dcrtest.ReportTestSetupMalfunction(
 			fmt.Errorf(
 				" incorrect state: "+
 					"working dir should be deleted before exit. %v ",

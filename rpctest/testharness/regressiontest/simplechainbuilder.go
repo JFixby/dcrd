@@ -2,11 +2,11 @@ package regressiontest
 
 import (
 	"fmt"
-	"github.com/decred/dcrd/rpctest"
-	"github.com/decred/dcrd/rpctest/testharness"
-	"strings"
-	"strconv"
+	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/rpctest/testharness"
+	"strconv"
+	"strings"
 )
 
 func DeploySimpleChain(testSetup *ChainWithMatureOutputsSpawner, harness *testharness.Harness) {
@@ -25,11 +25,11 @@ func DeploySimpleChain(testSetup *ChainWithMatureOutputsSpawner, harness *testha
 	// to be set with dcrd --miningaddr
 	{
 		address, err := harness.Wallet.GetNewAddress("default")
-		rpctest.CheckTestSetupMalfunction(err)
+		dcrtest.CheckTestSetupMalfunction(err)
 		harness.MiningAddress = address
 
-		rpctest.AssertNotNil("MiningAddress", harness.MiningAddress)
-		rpctest.AssertNotEmpty("MiningAddress", harness.MiningAddress.String())
+		dcrtest.AssertNotNil("MiningAddress", harness.MiningAddress)
+		dcrtest.AssertNotEmpty("MiningAddress", harness.MiningAddress.String())
 
 		fmt.Println("Mining address: " + harness.MiningAddress.String())
 	}
@@ -101,7 +101,7 @@ func launchHarnessSequence(harness *testharness.Harness, args *launchArguments) 
 	if args.CreateTestChain {
 		numToGenerate := uint32(args.CoinbaseMaturity) + args.NumMatureOutputs
 		err := generateTestChain(numToGenerate, harness.DcrdRPCClient())
-		rpctest.CheckTestSetupMalfunction(err)
+		dcrtest.CheckTestSetupMalfunction(err)
 	}
 }
 
@@ -131,6 +131,6 @@ func extractSeedIndexFromHarnessName(harnessName string) uint32 {
 	seedString := parts[1]
 	tmp, err := strconv.Atoi(seedString)
 	seedIndex := uint32(tmp)
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 	return seedIndex
 }

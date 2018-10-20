@@ -8,9 +8,9 @@ import (
 	"math"
 	"time"
 
+	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/rpcclient"
 	"github.com/decred/dcrwallet/errors"
-	"github.com/decred/dcrd/rpctest"
 )
 
 type RPCConnection struct {
@@ -21,18 +21,18 @@ type RPCConnection struct {
 
 func (client *RPCConnection) Connect(rpcConf *rpcclient.ConnConfig, ntfnHandlers *rpcclient.NotificationHandlers) {
 	if client.isConnected {
-		rpctest.ReportTestSetupMalfunction(errors.Errorf("%v is already connected", client.rpcClient))
+		dcrtest.ReportTestSetupMalfunction(errors.Errorf("%v is already connected", client.rpcClient))
 	}
 	client.isConnected = true
 	rpcClient := NewRPCConnection(rpcConf, client.MaxConnRetries, ntfnHandlers)
 	err := rpcClient.NotifyBlocks()
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 	client.rpcClient = rpcClient
 }
 
 func (client *RPCConnection) Disconnect() {
 	if !client.isConnected {
-		rpctest.ReportTestSetupMalfunction(errors.Errorf("%v is already disconnected", client))
+		dcrtest.ReportTestSetupMalfunction(errors.Errorf("%v is already disconnected", client))
 	}
 	client.isConnected = false
 	client.rpcClient.Disconnect()
@@ -53,7 +53,7 @@ func NewRPCConnection(config *rpcclient.ConnConfig, maxConnRetries int, ntfnHand
 		break
 	}
 	if client == nil {
-		rpctest.ReportTestSetupMalfunction(errors.Errorf("client connection timedout"))
+		dcrtest.ReportTestSetupMalfunction(errors.Errorf("client connection timedout"))
 	}
 	return client
 }

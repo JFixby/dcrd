@@ -1,13 +1,13 @@
 package regressiontest
 
 import (
-	"github.com/decred/dcrd/dcrutil"
-	"testing"
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/wire"
-	"github.com/decred/dcrd/txscript"
-	"github.com/jfixby/pin"
+	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/rpctest/testharness"
+	"github.com/decred/dcrd/txscript"
+	"github.com/decred/dcrd/wire"
+	"github.com/jfixby/pin"
+	"testing"
 )
 
 func genSpend(t *testing.T, r *testharness.Harness, amt dcrutil.Amount) *chainhash.Hash {

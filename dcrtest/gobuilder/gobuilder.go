@@ -5,13 +5,14 @@
 package gobuilder
 
 import (
-	"os"
-	"github.com/decred/dcrd/rpctest"
 	"go/build"
-	"sync"
+	"os"
 	"path/filepath"
 	"runtime"
-	"github.com/decred/dcrd/rpctest/commandline"
+	"sync"
+
+	"github.com/decred/dcrd/dcrtest"
+	"github.com/decred/dcrd/dcrtest/commandline"
 )
 
 type GoBuiderConfig struct {
@@ -46,12 +47,12 @@ func (buider *GoBuider) Build() {
 
 	goProjectPath := buider.cfg.GoProjectPath
 	outputFolderPath := buider.cfg.OutputFolderPath
-	rpctest.MakeDirs(outputFolderPath)
+	dcrtest.MakeDirs(outputFolderPath)
 	clearOutput(buider)
 
 	// check project path
 	pkg, err := build.ImportDir(goProjectPath, build.FindOnly)
-	rpctest.CheckTestSetupMalfunction(err)
+	dcrtest.CheckTestSetupMalfunction(err)
 	goProjectPath = pkg.ImportPath
 
 	runBuildCommand(buider, goProjectPath, outputFolderPath)
@@ -75,6 +76,6 @@ func runBuildCommand(builder *GoBuider, goProjectPath string, outputFolderPath s
 
 func clearOutput(buider *GoBuider) {
 	targetFolder := buider.cfg.OutputFolderPath
-	rpctest.FileExists(targetFolder)
-	rpctest.CheckTestSetupMalfunction(os.Remove(targetFolder))
+	dcrtest.FileExists(targetFolder)
+	dcrtest.CheckTestSetupMalfunction(os.Remove(targetFolder))
 }
