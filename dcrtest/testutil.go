@@ -42,7 +42,7 @@ func ReportTestSetupMalfunction(malfunction error) error {
 
 	fmt.Fprintln(os.Stderr, malfunction.Error())
 
-	for k := range disposableAssetsList {
+	for k := range leaksList {
 		k.Dispose()
 	}
 

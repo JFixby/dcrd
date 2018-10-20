@@ -63,12 +63,12 @@ func (process *ExternalProcess) Launch(debugOutput bool) {
 	err := cmd.Start()
 	dcrtest.CheckTestSetupMalfunction(err)
 
+	ExternalProcesses.add(process)
+
 	if process.WaitForExit {
 		process.waitForExit()
 		return
 	}
-
-	ExternalProcesses.add(process)
 }
 
 // Stop interrupts the running process, and waits until it exits properly.

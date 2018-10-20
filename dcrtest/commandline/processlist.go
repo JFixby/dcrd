@@ -17,7 +17,7 @@ var ExternalProcesses = &ExternalProcessesList{
 	set: make(map[*ExternalProcess]bool),
 }
 
-// ExternalProcessesList implements DisposableAsset
+// ExternalProcessesList implements LeakyResource
 type ExternalProcessesList struct {
 	set map[*ExternalProcess]bool
 }

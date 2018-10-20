@@ -7,8 +7,6 @@ package gobuilder
 import (
 	"testing"
 	"github.com/decred/dcrd/dcrtest"
-	"io/ioutil"
-	"fmt"
 	"os"
 )
 
@@ -19,19 +17,18 @@ func TestGoBuider(t *testing.T) {
 }
 
 func runExample() {
-	testWorkingDir, err := ioutil.TempDir("", "gobuid-test-")
-	if err != nil {
-		fmt.Println("Unable to create working dir: ", err)
-		os.Exit(-1)
-	}
-	defer dcrtest.DeleteFile(testWorkingDir)
+	testWorkingDir := dcrtest.NewTempDir(os.TempDir(), "test-go-builder")
+
+	testWorkingDir.MakeDir()
+	defer testWorkingDir.Dispose()
 
 	builder := &GoBuider{
 		GoProjectPath:    DetermineProjectPackagePath("dcrd"),
-		OutputFolderPath: testWorkingDir,
+		OutputFolderPath: testWorkingDir.Path(),
 		BuildFileName:    "dcrd",
 	}
 
 	builder.Build()
-	builder.Dispose()
+	defer builder.Dispose()
+
 }

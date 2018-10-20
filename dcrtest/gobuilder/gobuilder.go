@@ -5,13 +5,13 @@
 package gobuilder
 
 import (
-	"go/build"
 	"path/filepath"
 	"runtime"
 	"sync"
 
 	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/dcrtest/commandline"
+	"go/build"
 )
 
 // GoBuider is a handler helping to build a target Go project
@@ -42,8 +42,11 @@ func (builder *GoBuider) Build() {
 	outputFolderPath := builder.OutputFolderPath
 	dcrtest.MakeDirs(outputFolderPath)
 
-	deleteOutputExecutable(builder)
-	dcrtest.DeRegisterDisposableAsset(builder)
+	target := builder.Executable()
+	if dcrtest.FileExists(target) {
+		deleteOutputExecutable(builder)
+		dcrtest.DeRegisterDisposableAsset(builder)
+	}
 
 	// check project path
 	pkg, err := build.ImportDir(goProjectPath, build.FindOnly)
@@ -77,8 +80,5 @@ func (builder *GoBuider) Dispose() {
 }
 
 func deleteOutputExecutable(builder *GoBuider) {
-	target := builder.Executable()
-	if dcrtest.FileExists(target) {
-		dcrtest.DeleteFile(target)
-	}
+	dcrtest.DeleteFile(builder.Executable())
 }
