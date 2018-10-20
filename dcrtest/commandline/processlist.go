@@ -11,10 +11,6 @@ import (
 	"github.com/decred/dcrd/dcrtest"
 )
 
-func init() {
-	dcrtest.RegisterDisposableAsset(ExternalProcesses)
-}
-
 // ExternalProcesses keeps track of all running processes
 // to execute emergency killProcess in case of the test setup malfunction
 var ExternalProcesses = &ExternalProcessesList{
@@ -71,10 +67,16 @@ func (list *ExternalProcessesList) emergencyKillAll() {
 
 // add registers process
 func (list *ExternalProcessesList) add(process *ExternalProcess) {
+	if len(list.set) == 0 {
+		dcrtest.RegisterDisposableAsset(ExternalProcesses)
+	}
 	list.set[process] = true
 }
 
 // remove deregisters process
 func (list *ExternalProcessesList) remove(process *ExternalProcess) {
 	delete(list.set, process)
+	if len(list.set) == 0 {
+		dcrtest.DeRegisterDisposableAsset(ExternalProcesses)
+	}
 }

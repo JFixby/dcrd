@@ -11,9 +11,9 @@ import (
 	"strings"
 )
 
-// DetermineProjectPackagePath starting from a current
-// working directory climbs up to a folder with the
-// target name and returns its path as a result.
+// DetermineProjectPackagePath
+// Starting from a current working directory climbs up
+// to a folder with the target name and returns its path as a result.
 // Used to determine dcrd project path for the following
 // execution of a Go builder.
 func DetermineProjectPackagePath(projectName string) string {

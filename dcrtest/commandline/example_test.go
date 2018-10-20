@@ -14,6 +14,6 @@ func TestGoExample(t *testing.T) {
 	proc.Arguments = append(proc.Arguments, "-v")
 	proc.Arguments = append(proc.Arguments, "help")
 
-	proc.Launch(true)
-
+	debugOutput := true
+	proc.Launch(debugOutput)
 }

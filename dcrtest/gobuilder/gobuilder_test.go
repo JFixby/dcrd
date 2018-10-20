@@ -5,30 +5,33 @@
 package gobuilder
 
 import (
-	"fmt"
+	"testing"
 	"github.com/decred/dcrd/dcrtest"
 	"io/ioutil"
+	"fmt"
 	"os"
-	"testing"
 )
 
 // TestGoBuider builds current project executable
 func TestGoBuider(t *testing.T) {
+	defer dcrtest.VerifyNoResourcesLeaked()
+	runExample()
+}
+
+func runExample() {
 	testWorkingDir, err := ioutil.TempDir("", "gobuid-test-")
 	if err != nil {
 		fmt.Println("Unable to create working dir: ", err)
 		os.Exit(-1)
 	}
+	defer dcrtest.DeleteFile(testWorkingDir)
 
-	cfg := &GoBuiderConfig{
+	builder := &GoBuider{
 		GoProjectPath:    DetermineProjectPackagePath("dcrd"),
 		OutputFolderPath: testWorkingDir,
-		BuidFileName:     "dcrd",
+		BuildFileName:    "dcrd",
 	}
 
-	builder := NewGoBuider(cfg)
-
 	builder.Build()
-
-	dcrtest.DeleteFile(testWorkingDir)
+	builder.Dispose()
 }

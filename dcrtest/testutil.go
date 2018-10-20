@@ -42,8 +42,8 @@ func ReportTestSetupMalfunction(malfunction error) error {
 
 	fmt.Fprintln(os.Stderr, malfunction.Error())
 
-	for _, d := range disposableAssetsList {
-		d.Dispose()
+	for k := range disposableAssetsList {
+		k.Dispose()
 	}
 
 	panic(fmt.Sprintf("Test setup malfunction: %v", malfunction))

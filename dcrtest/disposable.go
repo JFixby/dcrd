@@ -4,20 +4,43 @@
 
 package dcrtest
 
+import (
+	"fmt"
+	"github.com/davecgh/go-spew/spew"
+)
+
 // disposableAssetsList keeps track of all assets and resources
 // created by test setup execution for the following disposal.
 //
 // This includes removing all temporary directories,
 // and shutting down any created processes.
-var disposableAssetsList []DisposableAsset
+var disposableAssetsList map[DisposableAsset]bool
 
 // RegisterDisposableAsset registers disposable asset
 func RegisterDisposableAsset(a DisposableAsset) {
-	disposableAssetsList = append(disposableAssetsList, a)
+	if disposableAssetsList == nil {
+		disposableAssetsList = make(map[DisposableAsset]bool)
+	}
+	disposableAssetsList[a] = true
+}
+
+func DeRegisterDisposableAsset(a DisposableAsset) {
+	delete(disposableAssetsList, a)
 }
 
 // DisposableAsset is a handler for disposable resources
 type DisposableAsset interface {
 	// Dispose called by test setup before exit
 	Dispose()
+}
+
+func VerifyNoResourcesLeaked() {
+	if len(disposableAssetsList) != 0 {
+		ReportTestSetupMalfunction(
+			fmt.Errorf(
+				"incorrect state: resources leak detected: %v ",
+				spew.Sdump(disposableAssetsList),
+			),
+		)
+	}
 }

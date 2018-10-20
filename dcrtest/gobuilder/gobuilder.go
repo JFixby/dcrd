@@ -6,7 +6,6 @@ package gobuilder
 
 import (
 	"go/build"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -15,51 +14,48 @@ import (
 	"github.com/decred/dcrd/dcrtest/commandline"
 )
 
-type GoBuiderConfig struct {
+// GoBuider is a handler helping to build a target Go project
+type GoBuider struct {
 	GoProjectPath    string
 	OutputFolderPath string
-	BuidFileName     string
-}
+	BuildFileName    string
 
-func NewGoBuider(config *GoBuiderConfig) *GoBuider {
-	buider := &GoBuider{
-		cfg: config,
-	}
-	return buider
-}
-
-type GoBuider struct {
-	cfg        *GoBuiderConfig
 	compileMtx sync.Mutex
 }
 
+// Executable returns full path to an executable target file
 func (builder *GoBuider) Executable() string {
 	outputPath := filepath.Join(
-		builder.cfg.OutputFolderPath, builder.cfg.BuidFileName)
+		builder.OutputFolderPath, builder.BuildFileName)
 	if runtime.GOOS == "windows" {
 		outputPath += ".exe"
 	}
 	return outputPath
 }
 
-func (buider *GoBuider) Build() {
-	buider.compileMtx.Lock()
-	defer buider.compileMtx.Unlock()
+// Build compiles target project and writes output to the target output folder
+func (builder *GoBuider) Build() {
+	builder.compileMtx.Lock()
+	defer builder.compileMtx.Unlock()
 
-	goProjectPath := buider.cfg.GoProjectPath
-	outputFolderPath := buider.cfg.OutputFolderPath
+	goProjectPath := builder.GoProjectPath
+	outputFolderPath := builder.OutputFolderPath
 	dcrtest.MakeDirs(outputFolderPath)
-	clearOutput(buider)
+
+	deleteOutputExecutable(builder)
+	dcrtest.DeRegisterDisposableAsset(builder)
 
 	// check project path
 	pkg, err := build.ImportDir(goProjectPath, build.FindOnly)
 	dcrtest.CheckTestSetupMalfunction(err)
 	goProjectPath = pkg.ImportPath
 
-	runBuildCommand(buider, goProjectPath, outputFolderPath)
+	runBuildCommand(builder, goProjectPath)
+	dcrtest.RegisterDisposableAsset(builder)
 }
 
-func runBuildCommand(builder *GoBuider, goProjectPath string, outputFolderPath string) {
+// runBuildCommand calls `go build`
+func runBuildCommand(builder *GoBuider, goProjectPath string) {
 	// Build and output an executable in a static temp path.
 	proc := &commandline.ExternalProcess{
 		CommandName: "go",
@@ -75,8 +71,14 @@ func runBuildCommand(builder *GoBuider, goProjectPath string, outputFolderPath s
 	proc.Launch(true)
 }
 
-func clearOutput(buider *GoBuider) {
-	targetFolder := buider.cfg.OutputFolderPath
-	dcrtest.FileExists(targetFolder)
-	dcrtest.CheckTestSetupMalfunction(os.Remove(targetFolder))
+func (builder *GoBuider) Dispose() {
+	deleteOutputExecutable(builder)
+	dcrtest.DeRegisterDisposableAsset(builder)
+}
+
+func deleteOutputExecutable(builder *GoBuider) {
+	target := builder.Executable()
+	if dcrtest.FileExists(target) {
+		dcrtest.DeleteFile(target)
+	}
 }
