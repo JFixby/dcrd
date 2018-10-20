@@ -10,14 +10,13 @@ import (
 )
 
 // Pool keeps track of reusable Spawnable instances.
-// Multiple Spawnable instances may be run concurrently, to allow for testing
-// complex scenarios involving multiple nodes.
 type Pool struct {
 	cache                    map[string]Spawnable
 	registryAccessController sync.RWMutex
 	spawner                  Spawner
 }
 
+// NewPool produces a new Pool instance
 func NewPool(spawner Spawner) *Pool {
 	return &Pool{
 		cache:   make(map[string]Spawnable),
@@ -25,6 +24,7 @@ func NewPool(spawner Spawner) *Pool {
 	}
 }
 
+// Spawnable wraps reusable asset
 type Spawnable interface {
 }
 
@@ -44,7 +44,6 @@ type Spawner interface {
 // creates a new instance when required and stores it in the cache
 // for the following calls
 func (pool *Pool) ObtainSpawnable(tag string) Spawnable {
-
 	// Resolve Spawnable name for the tag requested
 	// Pool uses SpawnableName as a key to cache a Spawnable instance
 	spawnableName := pool.spawner.NameForTag(tag)
@@ -85,6 +84,7 @@ func (pool *Pool) InitTags(tags []string) {
 	}
 }
 
+// Size returns current number if instances stored in the pool
 func (pool *Pool) Size() int {
 	return len(pool.cache)
 }

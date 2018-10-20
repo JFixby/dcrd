@@ -59,6 +59,8 @@ func functionName(tc dcrtestCase) string {
 }
 
 // harnessPool stores and manages harnesses
+// multiple harness instances may be run concurrently, to allow for testing
+// complex scenarios involving multiple nodes.
 var harnessPool *dcrtest.Pool
 
 // harnessWithZeroMOSpawner creates a local test harness
