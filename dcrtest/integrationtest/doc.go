@@ -1,4 +1,4 @@
-// Package testharness provides a dcrd-specific RPC testing harness crafting and
+// Package integrationtest provides a dcrd-specific RPC testing harness crafting and
 // executing integration tests by driving a `dcrd` instance via the `RPC`
 // interface. Each instance of an active harness comes equipped with a simple
 // in-memory HD wallet capable of properly syncing to the generated chain,
@@ -9,4 +9,4 @@
 // `dcrd`. However, the constructs presented are general enough to be adapted to
 // any project wishing to programmatically drive a `dcrd` instance of its
 // systems/integration tests.
-package testharness
+package integrationtest

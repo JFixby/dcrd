@@ -1,4 +1,4 @@
-package testharness
+package integrationtest
 
 import (
 	"encoding/binary"

@@ -18,10 +18,10 @@ import (
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/hdkeychain"
 	"github.com/decred/dcrd/rpcclient"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
 	"time"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 const chainUpdateSignal = "chainUpdateSignal"
@@ -89,7 +89,7 @@ func (w *InMemoryWallet) GetNewAddress(account string) (dcrutil.Address, error) 
 	//return w.rpc.GetNewAddress(account)
 }
 
-func (wallet *InMemoryWallet) Launch(args *testharness.DcrWalletLaunchArgs) error {
+func (wallet *InMemoryWallet) Launch(args *integrationtest.DcrWalletLaunchArgs) error {
 	handlers := &rpcclient.NotificationHandlers{}
 
 	// If a handler for the OnBlockConnected/OnBlockDisconnected callback
@@ -118,7 +118,7 @@ func (wallet *InMemoryWallet) Launch(args *testharness.DcrWalletLaunchArgs) erro
 
 	//handlers.OnClientConnected = wallet.onDcrdConnect
 
-	wallet.dcrdRpc = testharness.NewRPCConnection(args.DcrdRPCConfig, 5, handlers)
+	wallet.dcrdRpc = integrationtest.NewRPCConnection(args.DcrdRPCConfig, 5, handlers)
 	dcrtest.AssertNotNil("dcrdRpc", wallet.dcrdRpc)
 
 	// Filter transactions that pay to the coinbase associated with the

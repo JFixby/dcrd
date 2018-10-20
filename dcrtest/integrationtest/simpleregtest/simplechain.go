@@ -1,11 +1,11 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/dcrtest"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/jfixby/pin"
 	"path/filepath"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 // ChainWithMatureOutputsSpawner initializes the primary mining node
@@ -32,8 +32,8 @@ type ChainWithMatureOutputsSpawner struct {
 	// NumMatureOutputs sets requirement for the generated test chain
 	NumMatureOutputs uint32
 
-	DcrdFactory   testharness.DcrdNodeFactory
-	WalletFactory testharness.DcrWalletFactory
+	DcrdFactory   integrationtest.DcrdNodeFactory
+	WalletFactory integrationtest.DcrWalletFactory
 
 	ActiveNet *chaincfg.Params
 }
@@ -62,7 +62,7 @@ func (testSetup *ChainWithMatureOutputsSpawner) NewInstance(harnessName string) 
 
 	localhost := "127.0.0.1"
 
-	dcrdConfig := &testharness.DcrdNodeConfig{
+	dcrdConfig := &integrationtest.DcrdNodeConfig{
 		P2PHost: localhost,
 		P2PPort: p2p,
 
@@ -74,14 +74,14 @@ func (testSetup *ChainWithMatureOutputsSpawner) NewInstance(harnessName string) 
 		WorkingDir: harnessFolder,
 	}
 
-	walletConfig := &testharness.DcrdWalletConfig{
-		Seed:          testharness.NewTestSeed(seedIndex),
+	walletConfig := &integrationtest.DcrdWalletConfig{
+		Seed:          integrationtest.NewTestSeed(seedIndex),
 		WalletRPCHost: localhost,
 		WalletRPCPort: walletRPC,
 		ActiveNet:     testSetup.ActiveNet,
 	}
 
-	harness := &testharness.Harness{
+	harness := &integrationtest.Harness{
 		DcrdServer: testSetup.DcrdFactory.NewNode(dcrdConfig),
 		Wallet:     testSetup.WalletFactory.NewWallet(walletConfig),
 		WorkingDir: harnessFolder,
@@ -95,7 +95,7 @@ func (testSetup *ChainWithMatureOutputsSpawner) NewInstance(harnessName string) 
 // Dispose harness. This includes removing
 // all temporary directories, and shutting down any created processes.
 func (testSetup *ChainWithMatureOutputsSpawner) Dispose(s dcrtest.Spawnable) error {
-	h := s.(*testharness.Harness)
+	h := s.(*integrationtest.Harness)
 	if h == nil {
 		return nil
 	}

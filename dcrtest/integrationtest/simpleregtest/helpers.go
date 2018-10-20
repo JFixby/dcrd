@@ -1,4 +1,4 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"reflect"
@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"github.com/decred/dcrd/dcrjson"
 	"github.com/decred/dcrd/rpcclient"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"strconv"
 	"testing"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 // JoinType is an enum representing a particular type of "node join". A node
@@ -33,7 +33,7 @@ const (
 // passed JoinType. This function be used to to ensure all active test
 // harnesses are at a consistent state before proceeding to an assertion or
 // check within rpc tests.
-func JoinNodes(nodes []*testharness.Harness, joinType JoinType) error {
+func JoinNodes(nodes []*integrationtest.Harness, joinType JoinType) error {
 	switch joinType {
 	case Blocks:
 		return syncBlocks(nodes)
@@ -44,7 +44,7 @@ func JoinNodes(nodes []*testharness.Harness, joinType JoinType) error {
 }
 
 // syncMempools blocks until all nodes have identical mempools.
-func syncMempools(nodes []*testharness.Harness) error {
+func syncMempools(nodes []*integrationtest.Harness) error {
 	poolsMatch := false
 
 	for !poolsMatch {
@@ -76,7 +76,7 @@ func syncMempools(nodes []*testharness.Harness) error {
 }
 
 // syncBlocks blocks until all nodes report the same block height.
-func syncBlocks(nodes []*testharness.Harness) error {
+func syncBlocks(nodes []*integrationtest.Harness) error {
 	blocksMatch := false
 
 	for !blocksMatch {
@@ -106,7 +106,7 @@ func syncBlocks(nodes []*testharness.Harness) error {
 // harness and the "to" harness.  The connection made is flagged as persistent,
 // therefore in the case of disconnects, "from" will attempt to reestablish a
 // connection to the "to" harness.
-func ConnectNode(from *testharness.Harness, to *testharness.Harness) error {
+func ConnectNode(from *integrationtest.Harness, to *integrationtest.Harness) error {
 	peerInfo, err := from.DcrdRPCClient().GetPeerInfo()
 	if err != nil {
 		return err
@@ -144,7 +144,7 @@ func generateTestChain(numToGenerate uint32, node *rpcclient.Client) error {
 	return nil
 }
 
-func assertConnectedTo(t *testing.T, nodeA *testharness.Harness, nodeB *testharness.Harness) {
+func assertConnectedTo(t *testing.T, nodeA *integrationtest.Harness, nodeB *integrationtest.Harness) {
 	nodeAPeers, err := nodeA.DcrdRPCClient().GetPeerInfo()
 	if err != nil {
 		t.Fatalf("unable to get nodeA's peer info")

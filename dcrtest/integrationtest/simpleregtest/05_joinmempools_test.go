@@ -1,12 +1,12 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"github.com/decred/dcrd/dcrjson"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
 	"testing"
 	"time"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 func TestJoinMempools(t *testing.T) {
@@ -29,10 +29,10 @@ func TestJoinMempools(t *testing.T) {
 	}
 
 	// Create a fresh test harness.
-	harness := harnessWithZeroMOSpawner.NewInstance("TestJoinMempools").(*testharness.Harness)
+	harness := harnessWithZeroMOSpawner.NewInstance("TestJoinMempools").(*integrationtest.Harness)
 	defer harnessWithZeroMOSpawner.Dispose(harness)
 
-	nodeSlice := []*testharness.Harness{r, harness}
+	nodeSlice := []*integrationtest.Harness{r, harness}
 
 	// Both mempools should be considered synced as they are empty.
 	// Therefore, this should return instantly.

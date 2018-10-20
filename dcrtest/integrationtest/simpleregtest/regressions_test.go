@@ -3,18 +3,13 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package regressiontest
+package simpleregtest
 
 import (
 	"flag"
-	"fmt"
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/dcrtest"
-	"github.com/decred/dcrd/dcrtest/commandline"
 	"github.com/decred/dcrd/dcrtest/gobuilder"
-	"github.com/decred/dcrd/rpctest/testharness"
-	"github.com/decred/dcrd/rpctest/testharness/dcrdtestnode"
-	"github.com/decred/dcrd/rpctest/testharness/memwallet"
 	"github.com/jfixby/pin"
 	"os"
 	"path/filepath"
@@ -22,6 +17,9 @@ import (
 	"regexp"
 	"runtime"
 	"testing"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
+	"github.com/decred/dcrd/dcrtest/integrationtest/memwallet"
+	"github.com/decred/dcrd/dcrtest/integrationtest/dcrdtestnode"
 )
 
 type dcrtestCase func(t *testing.T)
@@ -68,19 +66,21 @@ var harnessPool *dcrtest.Pool
 var harnessWithZeroMOSpawner *ChainWithMatureOutputsSpawner
 
 // ObtainHarness manages access to the Pool for test cases
-func ObtainHarness(tag string) *testharness.Harness {
+func ObtainHarness(tag string) *integrationtest.Harness {
 	s := harnessPool.ObtainSpawnableConcurrentSafe(tag)
-	return s.(*testharness.Harness)
+	return s.(*integrationtest.Harness)
 }
 
-var DcrdFactory testharness.DcrdNodeFactory
-var WalletFactory testharness.DcrWalletFactory
+var DcrdFactory integrationtest.DcrdNodeFactory
+var WalletFactory integrationtest.DcrWalletFactory
 
 var Network = &chaincfg.RegNetParams
 
 // TestMain, is executed by go-test, and is
 // responsible for setting up and disposing test harnesses.
 func TestMain(m *testing.M) {
+	defer dcrtest.VerifyNoResourcesLeaked()
+
 	flag.Parse()
 
 	{ // Build list of all ignored tests
@@ -119,7 +119,6 @@ func TestMain(m *testing.M) {
 		pin.E("DeleteWorkingDir", err)
 	}
 
-	verifyCorrectExit()
 	os.Exit(exitCode)
 }
 func setupHarnessPool() {
@@ -157,40 +156,14 @@ func setupDcrNodeFactory() {
 	tempBinDir := filepath.Join(WorkingDir, "bin")
 	dcrtest.MakeDirs(tempBinDir)
 
-	cfg := &gobuilder.GoBuiderConfig{
+	DcrdGoBuilder := &gobuilder.GoBuider{
 		GoProjectPath:    dcrdProjectGoPath,
 		OutputFolderPath: tempBinDir,
-		BuidFileName:     "dcrd",
+		BuildFileName:    "dcrd",
 	}
-	DcrdGoBuilder := gobuilder.NewGoBuider(cfg)
 	DcrdGoBuilder.Build()
 
 	DcrdFactory = &dcrdtestnode.DcrdTestServerFactory{
 		DcrdExecutablePathProvider: DcrdGoBuilder,
-	}
-}
-
-// verifyCorrectExit is an additional safety check to ensure required
-// teardown routines were properly performed.
-func verifyCorrectExit() {
-	if harnessPool.Size() != 0 {
-		dcrtest.ReportTestSetupMalfunction(
-			fmt.Errorf(
-				"incorrect state: " +
-					"Pool should be disposed before exit. " +
-					"Call Pool.TearDownAll() ",
-			))
-	}
-
-	commandline.VerifyNoExternalProcessLeftBehind()
-
-	file := WorkingDir
-	if dcrtest.FileExists(file) {
-		dcrtest.ReportTestSetupMalfunction(
-			fmt.Errorf(
-				" incorrect state: "+
-					"working dir should be deleted before exit. %v ",
-				file,
-			))
 	}
 }

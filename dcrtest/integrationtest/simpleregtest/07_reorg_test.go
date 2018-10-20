@@ -1,9 +1,9 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"testing"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 func TestMemWalletReorg(t *testing.T) {
@@ -29,12 +29,12 @@ func TestMemWalletReorg(t *testing.T) {
 		DcrdFactory:       DcrdFactory,
 		ActiveNet:         Network,
 	}
-	harness := spawner.NewInstance("TestMemWalletReorg.1").(*testharness.Harness)
+	harness := spawner.NewInstance("TestMemWalletReorg.1").(*integrationtest.Harness)
 	defer spawner.Dispose(harness)
 
 	// Create a fresh harness, we'll be using the main harness to force a
 	// re-org on this local harness.
-	//harness := harnessWithZeroMOSpawner.NewInstance("TestMemWalletReorg.1").(*testharness.Harness)
+	//harness := harnessWithZeroMOSpawner.NewInstance("TestMemWalletReorg.1").(*integrationtest.Harness)
 	//defer harnessWithZeroMOSpawner.Dispose(harness)
 
 	// Ensure the internal wallet has the expected balance.
@@ -51,7 +51,7 @@ func TestMemWalletReorg(t *testing.T) {
 	if err := ConnectNode(harness, r); err != nil {
 		t.Fatalf("unable to connect harnesses: %v", err)
 	}
-	nodeSlice := []*testharness.Harness{r, harness}
+	nodeSlice := []*integrationtest.Harness{r, harness}
 	if err := JoinNodes(nodeSlice, Blocks); err != nil {
 		t.Fatalf("unable to join node on blocks: %v", err)
 	}

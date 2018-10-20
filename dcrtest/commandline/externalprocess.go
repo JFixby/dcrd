@@ -63,7 +63,7 @@ func (process *ExternalProcess) Launch(debugOutput bool) {
 	err := cmd.Start()
 	dcrtest.CheckTestSetupMalfunction(err)
 
-	ExternalProcesses.add(process)
+	dcrtest.RegisterDisposableAsset(process)
 
 	if process.WaitForExit {
 		process.waitForExit()
@@ -84,9 +84,13 @@ func (process *ExternalProcess) Stop() error {
 	}
 	process.isRunning = false
 
-	ExternalProcesses.remove(process)
+	defer dcrtest.DeRegisterDisposableAsset(process)
 
 	return killProcess(process, os.Stdout)
+}
+
+func (process *ExternalProcess) Dispose() {
+	killProcess(process, os.Stdout)
 }
 
 // waitForExit waits for ext process to exit
@@ -94,7 +98,7 @@ func (process *ExternalProcess) waitForExit() {
 	err := process.runningCommand.Wait()
 	dcrtest.CheckTestSetupMalfunction(err)
 	process.isRunning = false
-	ExternalProcesses.remove(process)
+	dcrtest.DeRegisterDisposableAsset(process)
 }
 
 // IsRunning indicates when ext process is working

@@ -1,4 +1,4 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"github.com/decred/dcrd/dcrutil"

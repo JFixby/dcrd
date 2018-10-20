@@ -4,14 +4,17 @@
 
 package commandline
 
-import "testing"
+import (
+	"testing"
+	"github.com/decred/dcrd/dcrtest"
+)
 
 func TestGoExample(t *testing.T) {
+	defer dcrtest.VerifyNoResourcesLeaked()
 	proc := &ExternalProcess{
 		CommandName: "go",
 		WaitForExit: true,
 	}
-	proc.Arguments = append(proc.Arguments, "-v")
 	proc.Arguments = append(proc.Arguments, "help")
 
 	debugOutput := true

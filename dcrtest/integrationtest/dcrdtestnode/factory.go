@@ -3,17 +3,17 @@ package dcrdtestnode
 import (
 	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/dcrtest/commandline"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"net"
 	"path/filepath"
 	"strconv"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 type DcrdTestServerFactory struct {
 	DcrdExecutablePathProvider commandline.ExecutablePathProvider
 }
 
-func (factory *DcrdTestServerFactory) NewNode(config *testharness.DcrdNodeConfig) testharness.DcrdNode {
+func (factory *DcrdTestServerFactory) NewNode(config *integrationtest.DcrdNodeConfig) integrationtest.DcrdNode {
 	exec := factory.DcrdExecutablePathProvider
 
 	dcrtest.AssertNotNil("DcrdExecutablePathProvider", exec)
@@ -28,7 +28,7 @@ func (factory *DcrdTestServerFactory) NewNode(config *testharness.DcrdNodeConfig
 		appDir:                     filepath.Join(config.WorkingDir, "dcrd"),
 		endpoint:                   "ws",
 		externalProcess:            &commandline.ExternalProcess{CommandName: "dcrd"},
-		rPCClient:                  &testharness.RPCConnection{MaxConnRetries: 20},
+		rPCClient:                  &integrationtest.RPCConnection{MaxConnRetries: 20},
 		DcrdExecutablePathProvider: exec,
 		network:                    config.ActiveNet,
 	}

@@ -1,8 +1,8 @@
-package regressiontest
+package simpleregtest
 
 import (
-	"github.com/decred/dcrd/rpctest/testharness"
 	"testing"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 func TestP2PConnect(t *testing.T) {
@@ -16,7 +16,7 @@ func TestP2PConnect(t *testing.T) {
 	r := ObtainHarness(MainHarnessName)
 
 	// Create a fresh test harness.
-	harness := harnessWithZeroMOSpawner.NewInstance("TestP2PConnect").(*testharness.Harness)
+	harness := harnessWithZeroMOSpawner.NewInstance("TestP2PConnect").(*integrationtest.Harness)
 	defer harnessWithZeroMOSpawner.Dispose(harness)
 
 	// Establish a p2p connection from our new local harness to the main

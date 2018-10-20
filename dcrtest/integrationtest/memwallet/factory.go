@@ -6,14 +6,14 @@ import (
 	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/hdkeychain"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/decred/dcrd/wire"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 type MemWalletFactory struct {
 }
 
-func (f *MemWalletFactory) NewWallet(cfg *testharness.DcrdWalletConfig) testharness.DcrWallet {
+func (f *MemWalletFactory) NewWallet(cfg *integrationtest.DcrdWalletConfig) integrationtest.DcrWallet {
 	dcrtest.AssertNotNil("ActiveNet", cfg.ActiveNet)
 	w, e := newMemWallet(cfg.ActiveNet, cfg.Seed)
 	dcrtest.CheckTestSetupMalfunction(e)

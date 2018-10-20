@@ -1,9 +1,9 @@
-package regressiontest
+package simpleregtest
 
 import (
-	"github.com/decred/dcrd/rpctest/testharness"
 	"testing"
 	"time"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 func TestJoinBlocks(t *testing.T) {
@@ -17,10 +17,10 @@ func TestJoinBlocks(t *testing.T) {
 	r := ObtainHarness(MainHarnessName)
 
 	// Create a fresh test harness.
-	harness := harnessWithZeroMOSpawner.NewInstance("TestJoinBlocks").(*testharness.Harness)
+	harness := harnessWithZeroMOSpawner.NewInstance("TestJoinBlocks").(*integrationtest.Harness)
 	defer harnessWithZeroMOSpawner.Dispose(harness)
 
-	nodeSlice := []*testharness.Harness{r, harness}
+	nodeSlice := []*integrationtest.Harness{r, harness}
 	blocksSynced := make(chan struct{})
 	go func() {
 		if err := JoinNodes(nodeSlice, Blocks); err != nil {

@@ -13,8 +13,8 @@ import (
 	"github.com/decred/dcrd/dcrtest/commandline"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/rpcclient"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/decred/dcrwallet/errors"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
 type DcrdTestServer struct {
@@ -32,7 +32,7 @@ type DcrdTestServer struct {
 
 	DcrdExecutablePathProvider commandline.ExecutablePathProvider
 
-	rPCClient *testharness.RPCConnection
+	rPCClient *integrationtest.RPCConnection
 
 	miningAddress dcrutil.Address
 
@@ -146,7 +146,7 @@ func (server *DcrdTestServer) P2PAddress() string {
 	return server.p2pAddress
 }
 
-func (server *DcrdTestServer) RPCClient() *testharness.RPCConnection {
+func (server *DcrdTestServer) RPCClient() *integrationtest.RPCConnection {
 	return server.rPCClient
 }
 
@@ -161,7 +161,7 @@ func (server *DcrdTestServer) Shutdown() {
 	dcrtest.DeleteFile(server.KeyFile())
 }
 
-func (n *DcrdTestServer) Launch(args *testharness.DcrdLaunchArgs) {
+func (n *DcrdTestServer) Launch(args *integrationtest.DcrdLaunchArgs) {
 	if n.IsRunning() {
 		dcrtest.ReportTestSetupMalfunction(errors.Errorf("DcrdTestServer is already running"))
 	}

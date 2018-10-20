@@ -1,16 +1,16 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
 	"github.com/jfixby/pin"
 	"testing"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
-func genSpend(t *testing.T, r *testharness.Harness, amt dcrutil.Amount) *chainhash.Hash {
+func genSpend(t *testing.T, r *integrationtest.Harness, amt dcrutil.Amount) *chainhash.Hash {
 	// Grab a fresh address from the wallet.
 	addr, err := r.Wallet.GetNewAddress("default")
 	if err != nil {
@@ -31,7 +31,7 @@ func genSpend(t *testing.T, r *testharness.Harness, amt dcrutil.Amount) *chainha
 	return txid
 }
 
-func assertTxMined(t *testing.T, r *testharness.Harness, txid *chainhash.Hash, blockHash *chainhash.Hash) {
+func assertTxMined(t *testing.T, r *integrationtest.Harness, txid *chainhash.Hash, blockHash *chainhash.Hash) {
 	block, err := r.DcrdRPCClient().GetBlock(blockHash)
 	if err != nil {
 		t.Fatalf("unable to get block: %v", err)

@@ -1,15 +1,15 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"fmt"
 	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/rpctest/testharness"
 	"strconv"
 	"strings"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
-func DeploySimpleChain(testSetup *ChainWithMatureOutputsSpawner, harness *testharness.Harness) {
+func DeploySimpleChain(testSetup *ChainWithMatureOutputsSpawner, harness *integrationtest.Harness) {
 	fmt.Println("Deploying Harness[" + harness.Name() + "]")
 
 	// launch a fresh harness (assumes harness working dir is empty)
@@ -78,11 +78,11 @@ type launchArguments struct {
 // 2. connect to the node via RPC client
 // 3. launch wallet and connects it to the Dcrd node
 // 4. connect to the wallet via RPC client
-func launchHarnessSequence(harness *testharness.Harness, args *launchArguments) {
+func launchHarnessSequence(harness *integrationtest.Harness, args *launchArguments) {
 	dcrd := harness.DcrdServer
 	wallet := harness.Wallet
 
-	dcrdLaunchArguments := &testharness.DcrdLaunchArgs{
+	dcrdLaunchArguments := &integrationtest.DcrdLaunchArgs{
 		DebugOutput:   args.DebugDCRDOutput,
 		MiningAddress: harness.MiningAddress,
 	}
@@ -90,7 +90,7 @@ func launchHarnessSequence(harness *testharness.Harness, args *launchArguments) 
 
 	rpcConfig := dcrd.RPCConnectionConfig()
 
-	walletLaunchArguments := &testharness.DcrWalletLaunchArgs{
+	walletLaunchArguments := &integrationtest.DcrWalletLaunchArgs{
 		DcrdCertFile:             dcrd.CertFile(),
 		DebugWalletOutput:        args.DebugWalletOutput,
 		MaxSecondsToWaitOnLaunch: 90,
@@ -110,7 +110,7 @@ func launchHarnessSequence(harness *testharness.Harness, args *launchArguments) 
 // 3. stop wallet
 // 2. disconnect from the Dcrd RPC
 // 1. stop Dcrd node
-func shutdownHarnessSequence(harness *testharness.Harness) {
+func shutdownHarnessSequence(harness *integrationtest.Harness) {
 	harness.Wallet.Shutdown()
 	harness.DcrdServer.Shutdown()
 }

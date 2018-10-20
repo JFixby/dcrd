@@ -1,4 +1,4 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"testing"

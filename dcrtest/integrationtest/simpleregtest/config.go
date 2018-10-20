@@ -1,4 +1,4 @@
-package regressiontest
+package simpleregtest
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 var WorkingDir = SetupWorkingDir()
 
 func SetupWorkingDir() string {
-	testWorkingDir, err := ioutil.TempDir("", "testharness")
+	testWorkingDir, err := ioutil.TempDir("", "integrationtest")
 	if err != nil {
 		fmt.Println("Unable to create working dir: ", err)
 		os.Exit(-1)
