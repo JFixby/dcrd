@@ -42,11 +42,16 @@ func (p *ExternalProcess) ClearArguments() {
 // Launch executes external process
 func (process *ExternalProcess) Launch(debugOutput bool) {
 	if process.isRunning {
-		dcrtest.ReportTestSetupMalfunction(errors.Errorf("Process is already running: %v", process.runningCommand))
+		dcrtest.ReportTestSetupMalfunction(
+			errors.Errorf("Process is already running: %v",
+				process.runningCommand,
+			),
+		)
 	}
 	process.isRunning = true
 
-	process.runningCommand = exec.Command(process.CommandName, process.Arguments...)
+	process.runningCommand = exec.Command(
+		process.CommandName, process.Arguments...)
 	cmd := process.runningCommand
 	fmt.Println("run command # " + cmd.Path)
 	fmt.Println(strings.Join(cmd.Args[0:], "\n    "))
@@ -71,7 +76,11 @@ func (process *ExternalProcess) Launch(debugOutput bool) {
 // it will persist unless explicitly killed.
 func (process *ExternalProcess) Stop() error {
 	if !process.isRunning {
-		dcrtest.ReportTestSetupMalfunction(errors.Errorf("Process is not running: %v", process.runningCommand))
+		dcrtest.ReportTestSetupMalfunction(
+			errors.Errorf("Process is not running: %v",
+				process.runningCommand,
+			),
+		)
 	}
 	process.isRunning = false
 

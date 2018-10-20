@@ -34,7 +34,8 @@ type GoBuider struct {
 }
 
 func (builder *GoBuider) Executable() string {
-	outputPath := filepath.Join(builder.cfg.OutputFolderPath, builder.cfg.BuidFileName)
+	outputPath := filepath.Join(
+		builder.cfg.OutputFolderPath, builder.cfg.BuidFileName)
 	if runtime.GOOS == "windows" {
 		outputPath += ".exe"
 	}
