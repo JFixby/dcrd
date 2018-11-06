@@ -1,0 +1,839 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="a77fc20c-360c-4681-8869-9f07a2deb0e0" name="Default" comment="">
+      <change beforePath="$PROJECT_DIR$/integration/bip0009_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/integration/bip0009_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/integration/csv_fork_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/integration/csv_fork_test.go" afterDir="false" />
+    </list>
+    <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
+    <option name="TRACKING_ENABLED" value="true" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="DatabaseView">
+    <option name="SHOW_INTERMEDIATE" value="true" />
+    <option name="GROUP_DATA_SOURCES" value="true" />
+    <option name="GROUP_SCHEMA" value="true" />
+    <option name="GROUP_CONTENTS" value="false" />
+    <option name="SORT_POSITIONED" value="false" />
+    <option name="SHOW_EMPTY_GROUPS" value="false" />
+    <option name="AUTO_SCROLL_FROM_SOURCE" value="false" />
+    <option name="HIDDEN_KINDS">
+      <set />
+    </option>
+    <expand />
+    <select />
+  </component>
+  <component name="FileEditorManager">
+    <splitter split-orientation="horizontal" split-proportion="0.6376812">
+      <split-first>
+        <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
+          <file leaf-file-name="msgtx.go" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/wire/msgtx.go">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="189">
+                  <caret line="179" column="5" selection-start-line="179" selection-start-column="5" selection-end-line="179" selection-end-column="5" />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="csv_fork_test.go" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/integration/csv_fork_test.go">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="-3117">
+                  <caret line="211" column="49" selection-start-line="211" selection-start-column="49" selection-end-line="211" selection-end-column="49" />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="bip0009_test.go" pinned="false" current-in-tab="false">
+            <entry file="file://$PROJECT_DIR$/integration/bip0009_test.go">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="85">
+                  <caret line="5" lean-forward="true" selection-start-line="5" selection-end-line="5" />
+                </state>
+              </provider>
+            </entry>
+          </file>
+          <file leaf-file-name="rpcserver_test.go" pinned="false" current-in-tab="true">
+            <entry file="file://$PROJECT_DIR$/integration/rpcserver_test.go">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="85">
+                  <caret line="5" lean-forward="true" selection-start-line="5" selection-end-line="5" />
+                </state>
+              </provider>
+            </entry>
+          </file>
+        </leaf>
+      </split-first>
+      <split-second>
+        <leaf>
+          <file leaf-file-name="msgtx.go" pinned="false" current-in-tab="true">
+            <entry file="file://$PROJECT_DIR$/wire/msgtx.go">
+              <provider selected="true" editor-type-id="text-editor">
+                <state relative-caret-position="17">
+                  <caret line="179" column="5" selection-start-line="179" selection-start-column="5" selection-end-line="179" selection-end-column="5" />
+                </state>
+              </provider>
+            </entry>
+          </file>
+        </leaf>
+      </split-second>
+    </splitter>
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Go File" />
+      </list>
+    </option>
+  </component>
+  <component name="FindInProjectRecents">
+    <findStrings>
+      <find>regnet&quot;</find>
+      <find>datadir</find>
+      <find>set</find>
+      <find>send</find>
+      <find>integrationtest</find>
+      <find>newAd</find>
+      <find>dcrd</find>
+      <find>dcr</find>
+      <find>dcrtest</find>
+      <find>BlockVersion</find>
+      <find>GenerateAndSubmitBlock</find>
+      <find>GetBlock(</find>
+      <find>is empty</find>
+      <find>map</find>
+      <find>resource&quot;</find>
+      <find>resources leak detected</find>
+      <find>r.ActiveNet</find>
+      <find>oldregtest</find>
+      <find>address</find>
+      <find>CreateTransaction</find>
+      <find>newadd</find>
+      <find>launch</find>
+      <find>newad</find>
+      <find>Deploying</find>
+      <find>testGetBestBlock</find>
+      <find>testSetup.Regnet1</find>
+      <find>TestBIP0068AndBIP0112Activation</find>
+      <find>.lock()</find>
+      <find>rejectnonstd</find>
+      <find>Regnet1</find>
+    </findStrings>
+    <replaceStrings>
+      <replace>regtest.</replace>
+      <replace>integration.</replace>
+      <replace>harness.</replace>
+      <replace>btcutil.</replace>
+      <replace>integration</replace>
+      <replace>net</replace>
+      <replace>harness</replace>
+      <replace>setup</replace>
+    </replaceStrings>
+    <dirStrings>
+      <dir>D:\PICFIGHT\src\github.com\btcsuite\btcd\integration</dir>
+    </dirStrings>
+  </component>
+  <component name="GOROOT" path="D:\Go" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="IdeDocumentHistory">
+    <option name="CHANGED_PATHS">
+      <list>
+        <option value="$PROJECT_DIR$/integration/commandline/example_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/testnode/factory.go" />
+        <option value="$PROJECT_DIR$/integration/gobuilder/util.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/02_some_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/03_JoinMempools_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/02_ConnectNode_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/01_SendOutputs_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/testnode/blockgen.go" />
+        <option value="$PROJECT_DIR$/integration/harness/oldregtest/rpc_harness.go" />
+        <option value="$PROJECT_DIR$/integration/harness/node.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/06_lsdkfjsdf_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/05_GenerateAndSubmitBlock_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/regressions_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/07_TestMemWalletReorg_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/oldregtest/rpc_harness_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/08_MemWalletLockedOutputs_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/04_JoinMempools_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/wallethelpers.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/config.go" />
+        <option value="$PROJECT_DIR$/integration/tempdir.go" />
+        <option value="$PROJECT_DIR$/integration/gobuilder/gobuilder.go" />
+        <option value="$PROJECT_DIR$/integration/testutil.go" />
+        <option value="$PROJECT_DIR$/integration/disposable.go" />
+        <option value="$PROJECT_DIR$/integration/leakyassets_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/generatecustomblock_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/lockedoutputs_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/generateblock_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/testnode/node.go" />
+        <option value="$PROJECT_DIR$/integration/harness/harness.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/main_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/connectnode_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/walletreorg_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/joinnodes_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/sendoutputs_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/helpers.go" />
+        <option value="$PROJECT_DIR$/integration/harness/wallet.go" />
+        <option value="$PROJECT_DIR$/integration/harness/memwallet/memwallet.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/GetBestBlock_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/blockcount_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/oldtest/rpcserver_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/blockhash_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/simplechainbuilder.go" />
+        <option value="$PROJECT_DIR$/integration/harness/port.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/simpleport.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/simplechain.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/bip0009_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/csv_fork_test.go" />
+        <option value="$PROJECT_DIR$/integration/harness/simpleregtest/setup.go" />
+        <option value="$PROJECT_DIR$/integration/csv_fork_test.go" />
+        <option value="$PROJECT_DIR$/integration/bip0009_test.go" />
+        <option value="$PROJECT_DIR$/integration/rpcserver_test.go" />
+      </list>
+    </option>
+  </component>
+  <component name="JsBuildToolGruntFileManager" detection-done="true" sorting="DEFINITION_ORDER" />
+  <component name="JsBuildToolPackageJson" detection-done="true" sorting="DEFINITION_ORDER" />
+  <component name="JsGulpfileManager">
+    <detection-done>true</detection-done>
+    <sorting>DEFINITION_ORDER</sorting>
+  </component>
+  <component name="NodePackageJsonFileManager">
+    <packageJsonPaths />
+  </component>
+  <component name="ProjectFrameBounds" extendedState="6">
+    <option name="x" value="260" />
+    <option name="y" value="20" />
+    <option name="width" value="1400" />
+    <option name="height" value="1000" />
+  </component>
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true">
+    <ConfirmationsSetting value="1" id="Add" />
+  </component>
+  <component name="ProjectView">
+    <navigator proportions="" version="1">
+      <foldersAlwaysOnTop value="true" />
+    </navigator>
+    <panes>
+      <pane id="Scope" />
+      <pane id="ProjectPane">
+        <subPane>
+          <expand>
+            <path>
+              <item name="btcd" type="b2602c69:ProjectViewProjectNode" />
+              <item name="btcd" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="btcd" type="b2602c69:ProjectViewProjectNode" />
+              <item name="btcd" type="462c0819:PsiDirectoryNode" />
+              <item name="integration" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="btcd" type="b2602c69:ProjectViewProjectNode" />
+              <item name="btcd" type="462c0819:PsiDirectoryNode" />
+              <item name="integration" type="462c0819:PsiDirectoryNode" />
+              <item name="rpctest" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="btcd" type="b2602c69:ProjectViewProjectNode" />
+              <item name="External Libraries" type="cb654da1:ExternalLibrariesNode" />
+            </path>
+          </expand>
+          <select />
+        </subPane>
+      </pane>
+    </panes>
+  </component>
+  <component name="PropertiesComponent">
+    <property name="DefaultGoTemplateProperty" value="Go File" />
+    <property name="go.gopath.indexing.explicitly.defined" value="true" />
+    <property name="go.sdk.automatically.set" value="true" />
+    <property name="go.vendoring.notification.had.been.shown" value="true" />
+    <property name="last_opened_file_path" value="$USER_HOME$" />
+  </component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="D:\PICFIGHT\src\github.com\btcsuite\btcd\integration\harness\simpleregtest" />
+      <recent name="D:\PICFIGHT\src\github.com\btcsuite\btcd\integration" />
+      <recent name="D:\PICFIGHT\src\github.com\btcsuite\btcd\integration\harness" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\PICFIGHT\src\github.com\btcsuite\btcd\integration\harness\testnode" />
+      <recent name="D:\PICFIGHT\src\github.com\btcsuite\btcd\integration\harness\simpleregtest" />
+      <recent name="D:\PICFIGHT\src\github.com\btcsuite\btcd\integration\harness\oldtest" />
+      <recent name="D:\PICFIGHT\src\github.com\btcsuite\btcd\integration\harness\regtest" />
+    </key>
+  </component>
+  <component name="RunDashboard">
+    <option name="ruleStates">
+      <list>
+        <RuleState>
+          <option name="name" value="ConfigurationTypeDashboardGroupingRule" />
+        </RuleState>
+        <RuleState>
+          <option name="name" value="StatusDashboardGroupingRule" />
+        </RuleState>
+      </list>
+    </option>
+  </component>
+  <component name="RunManager" selected="Go Test.go test github.com/btcsuite/btcd/integration">
+    <configuration name="TestBIP0068AndBIP0112Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="btcd" />
+      <working_directory value="$PROJECT_DIR$/integration/harness/simpleregtest" />
+      <go_parameters value="-i" />
+      <framework value="gotest" />
+      <kind value="PACKAGE" />
+      <package value="github.com/btcsuite/btcd/integration/harness/simpleregtest" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/" />
+      <pattern value="^TestBIP0068AndBIP0112Activation$" />
+    </configuration>
+    <configuration name="TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="btcd" />
+      <working_directory value="$PROJECT_DIR$/integration/harness/simpleregtest" />
+      <go_parameters value="-i" />
+      <framework value="gotest" />
+      <kind value="PACKAGE" />
+      <package value="github.com/btcsuite/btcd/integration/harness/simpleregtest" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/" />
+      <pattern value="^TestBIP0113Activation$" />
+    </configuration>
+    <configuration name="go test github.com/btcsuite/btcd/integration" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="btcd" />
+      <working_directory value="$PROJECT_DIR$/integration" />
+      <go_parameters value="-i" />
+      <framework value="gotest" />
+      <kind value="PACKAGE" />
+      <package value="github.com/btcsuite/btcd/integration" />
+      <directory value="$PROJECT_DIR$/" />
+      <filePath value="$PROJECT_DIR$/" />
+    </configuration>
+    <configuration name="go test integration" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="btcd" />
+      <working_directory value="$PROJECT_DIR$/integration" />
+      <framework value="gotest" />
+      <kind value="DIRECTORY" />
+      <directory value="$PROJECT_DIR$/integration" />
+      <filePath value="$PROJECT_DIR$/" />
+    </configuration>
+    <configuration name="go test simpleregtest" type="GoTestRunConfiguration" factoryName="Go Test" temporary="true" nameIsGenerated="true">
+      <module name="btcd" />
+      <working_directory value="$PROJECT_DIR$/integration/harness/simpleregtest" />
+      <framework value="gotest" />
+      <kind value="DIRECTORY" />
+      <directory value="$PROJECT_DIR$/integration/harness/simpleregtest" />
+      <filePath value="$PROJECT_DIR$/" />
+    </configuration>
+    <list>
+      <item itemvalue="Go Test.go test integration" />
+      <item itemvalue="Go Test.TestBIP0068AndBIP0112Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" />
+      <item itemvalue="Go Test.TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" />
+      <item itemvalue="Go Test.go test simpleregtest" />
+      <item itemvalue="Go Test.go test github.com/btcsuite/btcd/integration" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Go Test.go test github.com/btcsuite/btcd/integration" />
+        <item itemvalue="Go Test.TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" />
+        <item itemvalue="Go Test.go test simpleregtest" />
+        <item itemvalue="Go Test.TestBIP0068AndBIP0112Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" />
+        <item itemvalue="Go Test.go test integration" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="TestHistory">
+    <history-entry file="TestBIP0068AndBIP0112Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 21h 49m 43s.xml">
+      <configuration name="TestBIP0068AndBIP0112Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestBIP0068AndBIP0112Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 21h 53m 25s.xml">
+      <configuration name="TestBIP0068AndBIP0112Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestBIP0068AndBIP0112Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 21h 53m 50s.xml">
+      <configuration name="TestBIP0068AndBIP0112Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestBIP0113Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 21h 54m 15s.xml">
+      <configuration name="TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestBIP0113Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 21h 54m 36s.xml">
+      <configuration name="TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestBIP0113Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 21h 56m 23s.xml">
+      <configuration name="TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="go_test_simpleregtest - 2018.11.04 at 21h 57m 27s.xml">
+      <configuration name="go test simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestBIP0113Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 22h 03m 15s.xml">
+      <configuration name="TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestBIP0113Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 22h 09m 39s.xml">
+      <configuration name="TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+    <history-entry file="TestBIP0113Activation_in_github_com_btcsuite_btcd_integration_harness_simpleregtest - 2018.11.04 at 22h 10m 57s.xml">
+      <configuration name="TestBIP0113Activation in github.com/btcsuite/btcd/integration/harness/simpleregtest" configurationId="GoTestRunConfiguration" />
+    </history-entry>
+  </component>
+  <component name="ToolWindowManager">
+    <frame x="-8" y="-8" width="1936" height="1056" extended-state="6" />
+    <editor active="true" />
+    <layout>
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.18496802" />
+      <window_info anchor="bottom" id="TODO" order="5" />
+      <window_info anchor="bottom" id="Event Log" order="6" side_tool="true" />
+      <window_info anchor="right" id="Database" order="3" weight="0.32995737" />
+      <window_info id="Find" order="3" weight="0.22761194" />
+      <window_info anchor="bottom" id="Database Changes" order="7" show_stripe_button="false" />
+      <window_info anchor="bottom" id="Version Control" order="8" />
+      <window_info anchor="bottom" id="Run" order="1" visible="true" weight="0.41285402" />
+      <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
+      <window_info anchor="bottom" id="Terminal" order="9" weight="0.3398693" />
+      <window_info id="Favorites" order="2" side_tool="true" />
+      <window_info anchor="bottom" id="Debug" order="2" weight="0.48583877" />
+      <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
+      <window_info anchor="bottom" id="Inspection" order="4" weight="0.4" />
+      <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
+      <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
+      <window_info anchor="bottom" id="Message" order="0" />
+      <window_info anchor="bottom" id="Cvs" order="3" weight="0.25" />
+    </layout>
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="1" />
+  </component>
+  <component name="VcsContentAnnotationSettings">
+    <option name="myLimit" value="2678400000" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/generateblock_test.go</url>
+          <line>44</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/walletreorg_test.go</url>
+          <line>21</line>
+          <option name="timeStamp" value="2" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/gobuilder/gobuilder.go</url>
+          <line>47</line>
+          <option name="timeStamp" value="24" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/bip0009_test.go</url>
+          <line>191</line>
+          <properties />
+          <option name="timeStamp" value="33" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/bip0009_test.go</url>
+          <line>109</line>
+          <properties />
+          <option name="timeStamp" value="34" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/bip0009_test.go</url>
+          <line>102</line>
+          <properties />
+          <option name="timeStamp" value="35" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/bip0009_test.go</url>
+          <line>128</line>
+          <properties />
+          <option name="timeStamp" value="36" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/helpers.go</url>
+          <line>147</line>
+          <properties />
+          <option name="timeStamp" value="37" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/connectnode_test.go</url>
+          <line>24</line>
+          <properties />
+          <option name="timeStamp" value="38" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/integration/harness/simpleregtest/helpers.go</url>
+          <line>109</line>
+          <properties />
+          <option name="timeStamp" value="39" />
+        </line-breakpoint>
+      </breakpoints>
+      <option name="time" value="43" />
+    </breakpoint-manager>
+  </component>
+  <component name="editorHistoryManager">
+    <entry file="file://D:/GO/src/fmt/print.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="143">
+          <caret line="210" column="5" selection-start-line="210" selection-start-column="5" selection-end-line="210" selection-end-column="5" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/vendor/github.com/davecgh/go-spew/spew/dump.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="167">
+          <caret line="477" selection-start-line="477" selection-end-line="477" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/leakyassets_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="68">
+          <caret line="13" lean-forward="true" selection-start-line="13" selection-end-line="13" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/testutil.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="166">
+          <caret line="46" selection-start-line="46" selection-end-line="46" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/commandline/example_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="306">
+          <caret line="22" selection-start-line="22" selection-end-line="22" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/oldtest/bip0009_test.go" />
+    <entry file="file://$PROJECT_DIR$/integration/harness/oldregtest/memwallet.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="210">
+          <caret line="491" column="31" lean-forward="true" selection-start-line="491" selection-start-column="31" selection-end-line="491" selection-end-column="31" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/lockedoutputs_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="238">
+          <caret line="20" column="40" selection-start-line="20" selection-start-column="40" selection-end-line="20" selection-end-column="40" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/rpcserverhelp_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-699">
+          <caret line="8" column="46" selection-start-line="8" selection-start-column="46" selection-end-line="8" selection-end-column="46" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://D:/GO/src/runtime/panic.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="162">
+          <caret line="501" selection-start-line="501" selection-end-line="501" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/generatecustomblock_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="312">
+          <caret line="73" column="29" selection-start-line="73" selection-start-column="29" selection-end-line="73" selection-end-column="29" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/generateblock_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="128">
+          <caret line="47" column="28" selection-start-line="47" selection-start-column="28" selection-end-line="47" selection-end-column="28" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/testnode/node.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="145">
+          <caret line="192" column="31" selection-start-line="192" selection-start-column="31" selection-end-line="192" selection-end-column="31" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/pool.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="128">
+          <caret line="54" selection-start-line="54" selection-end-line="54" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/btcjson/chainsvrresults.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="173">
+          <caret line="113" column="4" selection-start-line="113" selection-start-column="4" selection-end-line="113" selection-end-column="4" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/disposable.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1875">
+          <caret line="142" selection-start-line="142" selection-end-line="142" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/gobuilder/gobuilder.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="221">
+          <caret line="78" selection-start-line="78" selection-end-line="78" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/blockchain/thresholdstate.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="135">
+          <caret line="24" column="4" selection-start-line="24" selection-start-column="4" selection-end-line="24" selection-end-column="4" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/sendoutputs_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="153">
+          <caret line="15" column="39" lean-forward="true" selection-start-line="15" selection-start-column="39" selection-end-line="15" selection-end-column="39" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://D:/GO/src/testing/testing.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="118">
+          <caret line="670" column="18" selection-start-line="670" selection-start-column="18" selection-end-line="670" selection-end-column="18" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/helpers.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="86">
+          <caret line="108" column="10" lean-forward="true" selection-start-line="108" selection-start-column="10" selection-end-line="108" selection-end-column="10" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/main_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="118">
+          <caret line="22" column="21" selection-start-line="22" selection-start-column="21" selection-end-line="22" selection-end-column="21" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/testnode/factory.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="136">
+          <caret line="16" column="42" lean-forward="true" selection-start-line="16" selection-start-column="42" selection-end-line="16" selection-end-column="42" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://D:/GO/src/builtin/builtin.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="182">
+          <caret line="72" column="5" lean-forward="true" selection-start-line="72" selection-start-column="5" selection-end-line="72" selection-end-column="5" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/memwallet/memwallet.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="364">
+          <caret line="87" column="33" lean-forward="true" selection-start-line="87" selection-start-column="33" selection-end-line="87" selection-end-column="33" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/memwallet/factory.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="306">
+          <caret line="44" lean-forward="true" selection-start-line="44" selection-end-line="44" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/wallet.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="272">
+          <caret line="22" lean-forward="true" selection-start-line="22" selection-end-line="22" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/oldregtest/rpc_harness.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="238">
+          <caret line="75" column="21" lean-forward="true" selection-start-line="75" selection-start-column="21" selection-end-line="75" selection-end-column="21" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/bestblock_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="68">
+          <caret line="8" selection-start-line="8" selection-end-line="12" selection-end-column="39" />
+          <folding>
+            <element signature="e#23#112#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/joinnodes_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="347">
+          <caret line="45" column="14" lean-forward="true" selection-start-line="45" selection-start-column="14" selection-end-line="45" selection-end-column="14" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/oldtest/rpcserver_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="493">
+          <caret line="38" column="18" lean-forward="true" selection-start-line="38" selection-start-column="18" selection-end-line="38" selection-end-column="18" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/blockhash_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-85">
+          <caret line="7" column="5" selection-start-line="7" selection-start-column="5" selection-end-line="7" selection-end-column="5" />
+          <folding>
+            <element signature="e#23#112#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/connectnode_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="68">
+          <caret line="8" column="5" selection-start-line="8" selection-start-column="5" selection-end-line="8" selection-end-column="5" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/blockcount_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="255">
+          <caret line="15" column="43" lean-forward="true" selection-start-line="15" selection-start-column="43" selection-end-line="15" selection-end-column="43" />
+          <folding>
+            <element signature="e#23#103#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/node.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="289">
+          <caret line="35" column="15" selection-start-line="35" selection-start-column="12" selection-end-line="35" selection-end-column="15" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/btcjson/register.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="217">
+          <caret line="86" column="37" lean-forward="true" selection-start-line="86" selection-start-column="4" selection-end-line="86" selection-end-column="37" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/btcjson/cmdinfo.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="145">
+          <caret line="226" column="9" lean-forward="true" selection-start-line="226" selection-start-column="9" selection-end-line="226" selection-end-column="9" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/harness.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="119">
+          <caret line="19" column="16" lean-forward="true" selection-start-line="19" selection-start-column="16" selection-end-line="19" selection-end-column="16" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/simplechainbuilder.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="209">
+          <caret line="66" column="44" lean-forward="true" selection-start-line="66" selection-start-column="4" selection-end-line="66" selection-end-column="44" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/simpleport.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="136">
+          <caret line="8" column="5" selection-start-line="8" selection-start-column="5" selection-end-line="8" selection-end-column="5" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/port.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="34">
+          <caret line="2" column="5" selection-start-line="2" selection-start-column="5" selection-end-line="2" selection-end-column="5" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/walletreorg_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="425">
+          <caret line="30" column="39" selection-start-line="30" selection-start-column="39" selection-end-line="30" selection-end-column="39" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/oldtest/csv_fork_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="419">
+          <caret line="403" column="39" selection-start-line="403" selection-start-column="27" selection-end-line="403" selection-end-column="39" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/simplechain.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="306">
+          <caret line="25" column="8" selection-start-line="25" selection-start-column="8" selection-end-line="25" selection-end-column="8" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/bip0009_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="457">
+          <caret line="342" column="27" selection-start-line="342" selection-start-column="27" selection-end-line="342" selection-end-column="27" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/csv_fork_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="17">
+          <caret line="105" column="25" lean-forward="true" selection-start-line="105" selection-start-column="25" selection-end-line="105" selection-end-column="25" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/harness/simpleregtest/setup.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="231">
+          <caret line="116" column="29" selection-start-line="116" selection-start-column="29" selection-end-line="116" selection-end-column="29" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/wire/msgtx.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="189">
+          <caret line="179" column="5" selection-start-line="179" selection-start-column="5" selection-end-line="179" selection-end-column="5" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/csv_fork_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-3117">
+          <caret line="211" column="49" selection-start-line="211" selection-start-column="49" selection-end-line="211" selection-end-column="49" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/bip0009_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="85">
+          <caret line="5" lean-forward="true" selection-start-line="5" selection-end-line="5" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/integration/rpcserver_test.go">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="85">
+          <caret line="5" lean-forward="true" selection-start-line="5" selection-end-line="5" />
+        </state>
+      </provider>
+    </entry>
+  </component>
+</project>
