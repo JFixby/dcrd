@@ -3,11 +3,10 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package rpctest
+package memwallet
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -15,44 +14,21 @@ import (
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrec/secp256k1"
+	"github.com/decred/dcrd/dcrtest"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/hdkeychain"
 	"github.com/decred/dcrd/rpcclient"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
+	"time"
+	"github.com/decred/dcrd/dcrtest/integrationtest"
 )
 
-var (
-	// hdSeed is the BIP 32 seed used by the memWallet to initialize it's
-	// HD root key. This value is hard coded in order to ensure
-	// deterministic behavior across test runs.
-	hdSeed = [chainhash.HashSize]byte{
-		0x79, 0xa6, 0x1a, 0xdb, 0xc6, 0xe5, 0xa2, 0xe1,
-		0x39, 0xd2, 0x71, 0x3a, 0x54, 0x6e, 0xc7, 0xc8,
-		0x75, 0x63, 0x2e, 0x75, 0xf1, 0xdf, 0x9c, 0x3f,
-		0xa6, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	}
-)
-
-// utxo represents an unspent output spendable by the memWallet. The maturity
-// height of the transaction is recorded in order to properly observe the
-// maturity period of direct coinbase outputs.
-type utxo struct {
-	pkScript       []byte
-	value          dcrutil.Amount
-	maturityHeight int64
-	keyIndex       uint32
-	isLocked       bool
-}
-
-// isMature returns true if the target utxo is considered "mature" at the
-// passed block height. Otherwise, false is returned.
-func (u *utxo) isMature(height int64) bool {
-	return height >= u.maturityHeight
-}
+const chainUpdateSignal = "chainUpdateSignal"
+const stopSignal = "stopSignal"
 
 // chainUpdate encapsulates an update to the current main chain. This struct is
-// used to sync up the memWallet each time a new block is connected to the main
+// used to sync up the InMemoryWallet each time a new block is connected to the main
 // chain.
 type chainUpdate struct {
 	blockHeight  int64
@@ -67,10 +43,10 @@ type undoEntry struct {
 	utxosCreated   []wire.OutPoint
 }
 
-// memWallet is a simple in-memory wallet whose purpose is to provide basic
+// InMemoryWallet is a simple in-memory wallet whose purpose is to provide basic
 // wallet functionality to the harness. The wallet uses a hard-coded HD key
 // hierarchy which promotes reproducibility between harness test runs.
-type memWallet struct {
+type InMemoryWallet struct {
 	coinbaseKey  *secp256k1.PrivateKey
 	coinbaseAddr dcrutil.Address
 
@@ -98,88 +74,115 @@ type memWallet struct {
 	reorgJournal map[int64]*undoEntry
 
 	chainUpdates      []*chainUpdate
-	chainUpdateSignal chan struct{}
+	chainUpdateSignal chan string
 	chainMtx          sync.Mutex
 
 	net *chaincfg.Params
 
-	rpc *rpcclient.Client
+	dcrdRpc *rpcclient.Client
 
 	sync.RWMutex
 }
 
-// newMemWallet creates and returns a fully initialized instance of the
-// memWallet given a particular blockchain's parameters.
-func newMemWallet(net *chaincfg.Params, harnessID uint32) (*memWallet, error) {
-	// The wallet's final HD seed is: hdSeed || harnessID. This method
-	// ensures that each harness instance uses a deterministic root seed
-	// based on its harness ID.
-	var harnessHDSeed [chainhash.HashSize + 4]byte
-	copy(harnessHDSeed[:], hdSeed[:])
-	binary.BigEndian.PutUint32(harnessHDSeed[:chainhash.HashSize], harnessID)
-
-	hdRoot, err := hdkeychain.NewMaster(harnessHDSeed[:], net)
-	if err != nil {
-		return nil, nil
-	}
-
-	// The first child key from the hd root is reserved as the coinbase
-	// generation address.
-	coinbaseChild, err := hdRoot.Child(0)
-	if err != nil {
-		return nil, err
-	}
-	coinbaseKey, err := coinbaseChild.ECPrivKey()
-	if err != nil {
-		return nil, err
-	}
-	coinbaseAddr, err := keyToAddr(coinbaseKey, net)
-	if err != nil {
-		return nil, err
-	}
-
-	// Track the coinbase generation address to ensure we properly track
-	// newly generated coins we can spend.
-	addrs := make(map[uint32]dcrutil.Address)
-	addrs[0] = coinbaseAddr
-
-	return &memWallet{
-		net:               net,
-		coinbaseKey:       coinbaseKey,
-		coinbaseAddr:      coinbaseAddr,
-		hdIndex:           1,
-		hdRoot:            hdRoot,
-		addrs:             addrs,
-		utxos:             make(map[wire.OutPoint]*utxo),
-		chainUpdateSignal: make(chan struct{}),
-		reorgJournal:      make(map[int64]*undoEntry),
-	}, nil
+func (w *InMemoryWallet) GetNewAddress(account string) (dcrutil.Address, error) {
+	return w.NewAddress()
+	//return w.rpc.GetNewAddress(account)
 }
 
-// Start launches all goroutines required for the wallet to function properly.
-func (m *memWallet) Start() {
-	go m.chainSyncer()
+func (wallet *InMemoryWallet) Launch(args *integrationtest.DcrWalletLaunchArgs) error {
+	handlers := &rpcclient.NotificationHandlers{}
+
+	// If a handler for the OnBlockConnected/OnBlockDisconnected callback
+	// has already been set, then we create a wrapper callback which
+	// executes both the currently registered callback, and the mem
+	// wallet's callback.
+	if handlers.OnBlockConnected != nil {
+		obc := handlers.OnBlockConnected
+		handlers.OnBlockConnected = func(header []byte, filteredTxns [][]byte) {
+			wallet.IngestBlock(header, filteredTxns)
+			obc(header, filteredTxns)
+		}
+	} else {
+		// Otherwise, we can claim the callback ourselves.
+		handlers.OnBlockConnected = wallet.IngestBlock
+	}
+	if handlers.OnBlockDisconnected != nil {
+		obd := handlers.OnBlockDisconnected
+		handlers.OnBlockDisconnected = func(header []byte) {
+			wallet.UnwindBlock(header)
+			obd(header)
+		}
+	} else {
+		handlers.OnBlockDisconnected = wallet.UnwindBlock
+	}
+
+	//handlers.OnClientConnected = wallet.onDcrdConnect
+
+	wallet.dcrdRpc = integrationtest.NewRPCConnection(args.DcrdRPCConfig, 5, handlers)
+	dcrtest.AssertNotNil("dcrdRpc", wallet.dcrdRpc)
+
+	// Filter transactions that pay to the coinbase associated with the
+	// wallet.
+	wallet.updateTxFilter()
+
+	// Ensure dcrd properly dispatches our registered call-back for each new
+	// block. Otherwise, the InMemoryWallet won't function properly.
+	err := wallet.dcrdRpc.NotifyBlocks()
+	dcrtest.CheckTestSetupMalfunction(err)
+
+	go wallet.chainSyncer()
+	return nil
+}
+
+func (wallet *InMemoryWallet) updateTxFilter() {
+	filterAddrs := []dcrutil.Address{}
+	for _, v := range wallet.addrs {
+		filterAddrs = append(filterAddrs, v)
+	}
+	//pin.D("filterAddrs", filterAddrs)
+	err := wallet.dcrdRpc.LoadTxFilter(true, filterAddrs, nil)
+	dcrtest.CheckTestSetupMalfunction(err)
+}
+
+func (w *InMemoryWallet) Shutdown() {
+	go func() {
+		w.chainUpdateSignal <- stopSignal
+	}()
+	w.dcrdRpc.Disconnect()
+	w.dcrdRpc = nil
+}
+
+func (w *InMemoryWallet) Sync() {
+	// Block until the wallet has fully synced up to the tip of the main
+	// chain.
+	_, height, err := w.dcrdRpc.GetBestBlock()
+	dcrtest.CheckTestSetupMalfunction(err)
+	ticker := time.NewTicker(time.Millisecond * 100)
+	for range ticker.C {
+		walletHeight := w.SyncedHeight()
+		if walletHeight == height {
+			break
+		}
+	}
+}
+
+func (m *InMemoryWallet) Dispose() error {
+	return nil
 }
 
 // SyncedHeight returns the height the wallet is known to be synced to.
 //
 // This function is safe for concurrent access.
-func (m *memWallet) SyncedHeight() int64 {
+func (m *InMemoryWallet) SyncedHeight() int64 {
 	m.RLock()
 	defer m.RUnlock()
 	return m.currentHeight
 }
 
-// SetRPCClient saves the passed rpc connection to dcrd as the wallet's
-// personal rpc connection.
-func (m *memWallet) SetRPCClient(rpcClient *rpcclient.Client) {
-	m.rpc = rpcClient
-}
-
 // IngestBlock is a call-back which is to be triggered each time a new block is
 // connected to the main chain. Ingesting a block updates the wallet's internal
 // utxo state based on the outputs created and destroyed within each block.
-func (m *memWallet) IngestBlock(header []byte, filteredTxns [][]byte) {
+func (m *InMemoryWallet) IngestBlock(header []byte, filteredTxns [][]byte) {
 	var hdr wire.BlockHeader
 	if err := hdr.FromBytes(header); err != nil {
 		panic(err)
@@ -205,7 +208,7 @@ func (m *memWallet) IngestBlock(header []byte, filteredTxns [][]byte) {
 	// available. We do this in a new goroutine in order to avoid blocking
 	// the main loop of the rpc client.
 	go func() {
-		m.chainUpdateSignal <- struct{}{}
+		m.chainUpdateSignal <- chainUpdateSignal
 	}()
 }
 
@@ -213,10 +216,13 @@ func (m *memWallet) IngestBlock(header []byte, filteredTxns [][]byte) {
 // keep the wallet's utxo state up to date.
 //
 // NOTE: This MUST be run as a goroutine.
-func (m *memWallet) chainSyncer() {
+func (m *InMemoryWallet) chainSyncer() {
 	var update *chainUpdate
 
-	for range m.chainUpdateSignal {
+	for s := range m.chainUpdateSignal {
+		if s == stopSignal {
+			break
+		}
 		// A new update is available, so pop the new chain update from
 		// the front of the update queue.
 		m.chainMtx.Lock()
@@ -251,7 +257,7 @@ func (m *memWallet) chainSyncer() {
 
 // evalOutputs evaluates each of the passed outputs, creating a new matching
 // utxo within the wallet if we're able to spend the output.
-func (m *memWallet) evalOutputs(outputs []*wire.TxOut, txHash *chainhash.Hash, isCoinbase bool, undo *undoEntry) {
+func (m *InMemoryWallet) evalOutputs(outputs []*wire.TxOut, txHash *chainhash.Hash, isCoinbase bool, undo *undoEntry) {
 	for i, output := range outputs {
 		pkScript := output.PkScript
 
@@ -285,7 +291,7 @@ func (m *memWallet) evalOutputs(outputs []*wire.TxOut, txHash *chainhash.Hash, i
 
 // evalInputs scans all the passed inputs, destroying any utxos within the
 // wallet which are spent by an input.
-func (m *memWallet) evalInputs(inputs []*wire.TxIn, undo *undoEntry) {
+func (m *InMemoryWallet) evalInputs(inputs []*wire.TxIn, undo *undoEntry) {
 	for _, txIn := range inputs {
 		op := txIn.PreviousOutPoint
 		oldUtxo, ok := m.utxos[op]
@@ -301,7 +307,7 @@ func (m *memWallet) evalInputs(inputs []*wire.TxIn, undo *undoEntry) {
 // UnwindBlock is a call-back which is to be executed each time a block is
 // disconnected from the main chain. Unwinding a block undoes the effect that a
 // particular block had on the wallet's internal utxo state.
-func (m *memWallet) UnwindBlock(header []byte) {
+func (m *InMemoryWallet) UnwindBlock(header []byte) {
 	var hdr wire.BlockHeader
 	if err := hdr.FromBytes(header); err != nil {
 		panic(err)
@@ -327,7 +333,7 @@ func (m *memWallet) UnwindBlock(header []byte) {
 // newAddress returns a new address from the wallet's hd key chain.  It also
 // loads the address into the RPC client's transaction filter to ensure any
 // transactions that involve it are delivered via the notifications.
-func (m *memWallet) newAddress() (dcrutil.Address, error) {
+func (m *InMemoryWallet) newAddress() (dcrutil.Address, error) {
 	index := m.hdIndex
 
 	childKey, err := m.hdRoot.Child(index)
@@ -338,28 +344,20 @@ func (m *memWallet) newAddress() (dcrutil.Address, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	addr, err := keyToAddr(privKey, m.net)
 	if err != nil {
 		return nil, err
 	}
-
-	err = m.rpc.LoadTxFilter(false, []dcrutil.Address{addr}, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	m.updateTxFilter()
 	m.addrs[index] = addr
-
 	m.hdIndex++
-
 	return addr, nil
 }
 
 // NewAddress returns a fresh address spendable by the wallet.
 //
 // This function is safe for concurrent access.
-func (m *memWallet) NewAddress() (dcrutil.Address, error) {
+func (m *InMemoryWallet) NewAddress() (dcrutil.Address, error) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -371,8 +369,8 @@ func (m *memWallet) NewAddress() (dcrutil.Address, error) {
 // the passed fee rate.  The passed fee rate should be expressed in
 // atoms-per-byte.
 //
-// NOTE: The memWallet's mutex must be held when this function is called.
-func (m *memWallet) fundTx(tx *wire.MsgTx, amt dcrutil.Amount, feeRate dcrutil.Amount) error {
+// NOTE: The InMemoryWallet's mutex must be held when this function is called.
+func (m *InMemoryWallet) fundTx(tx *wire.MsgTx, amt dcrutil.Amount, feeRate dcrutil.Amount) error {
 	const (
 		// spendSize is the largest number of bytes of a sigScript
 		// which spends a p2pkh output: OP_DATA_73 <sig> OP_DATA_33 <pubkey>
@@ -438,13 +436,13 @@ func (m *memWallet) fundTx(tx *wire.MsgTx, amt dcrutil.Amount, feeRate dcrutil.A
 // SendOutputs creates, then sends a transaction paying to the specified output
 // while observing the passed fee rate. The passed fee rate should be expressed
 // in atoms-per-byte.
-func (m *memWallet) SendOutputs(outputs []*wire.TxOut, feeRate dcrutil.Amount) (*chainhash.Hash, error) {
+func (m *InMemoryWallet) SendOutputs(outputs []*wire.TxOut, feeRate dcrutil.Amount) (*chainhash.Hash, error) {
 	tx, err := m.CreateTransaction(outputs, feeRate)
 	if err != nil {
 		return nil, err
 	}
 
-	return m.rpc.SendRawTransaction(tx, true)
+	return m.dcrdRpc.SendRawTransaction(tx, true)
 }
 
 // CreateTransaction returns a fully signed transaction paying to the specified
@@ -452,7 +450,7 @@ func (m *memWallet) SendOutputs(outputs []*wire.TxOut, feeRate dcrutil.Amount) (
 // expressed in atoms-per-byte.
 //
 // This function is safe for concurrent access.
-func (m *memWallet) CreateTransaction(outputs []*wire.TxOut, feeRate dcrutil.Amount) (*wire.MsgTx, error) {
+func (m *InMemoryWallet) CreateTransaction(outputs []*wire.TxOut, feeRate dcrutil.Amount) (*wire.MsgTx, error) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -515,7 +513,7 @@ func (m *memWallet) CreateTransaction(outputs []*wire.TxOut, feeRate dcrutil.Amo
 // being selected to fund a transaction via the CreateTransaction method.
 //
 // This function is safe for concurrent access.
-func (m *memWallet) UnlockOutputs(inputs []*wire.TxIn) {
+func (m *InMemoryWallet) UnlockOutputs(inputs []*wire.TxIn) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -532,7 +530,7 @@ func (m *memWallet) UnlockOutputs(inputs []*wire.TxIn) {
 // ConfirmedBalance returns the confirmed balance of the wallet.
 //
 // This function is safe for concurrent access.
-func (m *memWallet) ConfirmedBalance() dcrutil.Amount {
+func (m *InMemoryWallet) ConfirmedBalance() dcrutil.Amount {
 	m.RLock()
 	defer m.RUnlock()
 
@@ -548,15 +546,4 @@ func (m *memWallet) ConfirmedBalance() dcrutil.Amount {
 	}
 
 	return balance
-}
-
-// keyToAddr maps the passed private to corresponding p2pkh address.
-func keyToAddr(key *secp256k1.PrivateKey, net *chaincfg.Params) (dcrutil.Address, error) {
-	pubKey := (*secp256k1.PublicKey)(&key.PublicKey)
-	serializedKey := pubKey.SerializeCompressed()
-	pubKeyAddr, err := dcrutil.NewAddressSecpPubKey(serializedKey, net)
-	if err != nil {
-		return nil, err
-	}
-	return pubKeyAddr.AddressPubKeyHash(), nil
 }
