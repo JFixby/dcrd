@@ -6,50 +6,132 @@
 package chaincfg
 
 import (
+	"math/big"
 	"time"
 
+	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
 )
 
-// MainNetParams defines the network parameters for the main Decred network.
-var MainNetParams = Params{
-	Name:        "mainnet",
-	Net:         wire.MainNet,
-	DefaultPort: "9108",
-	DNSSeeds: []DNSSeed{
+var MainNetParams = &mainNetParams{}
+
+type mainNetParams struct{}
+
+func (p mainNetParams) Name() string {
+	return "mainnet"
+}
+
+func (p mainNetParams) Net() wire.CurrencyNet {
+	return wire.MainNet
+}
+
+func (p mainNetParams) DefaultPort() string {
+	return "9108"
+}
+
+func (p mainNetParams) DNSSeeds() []DNSSeed {
+	return []DNSSeed{
 		{"mainnet-seed.decred.mindcry.org", true},
 		{"mainnet-seed.decred.netpurgatory.com", true},
 		{"mainnet-seed.decred.org", true},
-	},
+	}
+}
 
-	// Chain parameters
-	GenesisBlock:             &genesisBlock,
-	GenesisHash:              &genesisHash,
-	PowLimit:                 mainPowLimit,
-	PowLimitBits:             0x1d00ffff,
-	ReduceMinDifficulty:      false,
-	MinDiffReductionTime:     0, // Does not apply since ReduceMinDifficulty false
-	GenerateSupported:        false,
-	MaximumBlockSizes:        []int{393216},
-	MaxTxSize:                393216,
-	TargetTimePerBlock:       time.Minute * 5,
-	WorkDiffAlpha:            1,
-	WorkDiffWindowSize:       144,
-	WorkDiffWindows:          20,
-	TargetTimespan:           time.Minute * 5 * 144, // TimePerBlock * WindowSize
-	RetargetAdjustmentFactor: 4,
+func (p mainNetParams) GenesisBlock() *wire.MsgBlock {
+	return &genesisBlock
+}
 
-	// Subsidy parameters.
-	BaseSubsidy:              3119582664, // 21m
-	MulSubsidy:               100,
-	DivSubsidy:               101,
-	SubsidyReductionInterval: 6144,
-	WorkRewardProportion:     6,
-	StakeRewardProportion:    3,
-	BlockTaxProportion:       1,
+func (p mainNetParams) GenesisHash() *chainhash.Hash {
+	return &genesisHash
+}
 
+func (p mainNetParams) PowLimit() *big.Int {
+	bigOne := big.NewInt(1)
+	// PowLimit is the highest proof of work value a Decred block can
+	// have for the main network.  It is the value 2^224 - 1.
+	return new(big.Int).Sub(new(big.Int).Lsh(bigOne, 224), bigOne)
+}
+
+func (p mainNetParams) PowLimitBits() uint32 {
+	return 0x1d00ffff
+}
+
+func (p mainNetParams) ReduceMinDifficulty() bool {
+	return false
+}
+
+func (p mainNetParams) MinDiffReductionTime() time.Duration {
+	return 0
+}
+
+func (p mainNetParams) GenerateSupported() bool {
+	return false
+}
+
+func (p mainNetParams) MaximumBlockSizes() []int {
+	return []int{393216}
+}
+
+func (p mainNetParams) MaxTxSize() int {
+	return 393216
+}
+
+func (p mainNetParams) TargetTimePerBlock() time.Duration {
+	return time.Minute * 5
+}
+
+func (p mainNetParams) WorkDiffAlpha() int64 {
+	return 1
+}
+
+func (p mainNetParams) WorkDiffWindowSize() int64 {
+	return 144
+}
+
+func (p mainNetParams) WorkDiffWindows() int64 {
+	return 20
+}
+
+func (p mainNetParams) TargetTimespan() time.Duration {
+	return time.Duration(int64(p.TargetTimePerBlock()) * p.WorkDiffWindowSize())
+}
+
+func (p mainNetParams) RetargetAdjustmentFactor() int64 {
+	return 4
+}
+
+// Subsidy parameters.
+func (p mainNetParams) BaseSubsidy() int64 {
+	return 3119582664 // 21m
+}
+
+func (p mainNetParams) MulSubsidy() int64 {
+	return 100
+}
+
+func (p mainNetParams) DivSubsidy() int64 {
+	return 101
+}
+
+func (p mainNetParams) SubsidyReductionInterval() int64 {
+	return 6144
+}
+
+func (p mainNetParams) WorkRewardProportion() uint16 {
+	return 6
+}
+
+func (p mainNetParams) StakeRewardProportion() uint16 {
+	return 3
+}
+
+func (p mainNetParams) BlockTaxProportion() uint16 {
+	return 1
+}
+
+func (p mainNetParams) Checkpoints() []Checkpoint {
 	// Checkpoints ordered from oldest to newest.
-	Checkpoints: []Checkpoint{
+	return []Checkpoint{
 		{440, newHashFromStr("0000000000002203eb2c95ee96906730bb56b2985e174518f90eb4db29232d93")},
 		{24480, newHashFromStr("0000000000000c9d4239c4ef7ef3fb5aaeed940244bc69c57c8c5e1f071b28a6")},
 		{48590, newHashFromStr("0000000000000d5e0de21a96d3c965f5f2db2c82612acd7389c140c9afe92ba7")},
@@ -69,15 +151,31 @@ var MainNetParams = Params{
 		{214672, newHashFromStr("0000000000000021d5cbeead55cb7fd659f07e8127358929ffc34cd362209758")},
 		{259810, newHashFromStr("0000000000000000ee0fbf469a9f32477ffbb46ebd7a280a53c842ab4243f97c")},
 		{295940, newHashFromStr("0000000000000000148852c8a919addf4043f9f267b13c08df051d359f1622ca")},
-	},
+	}
+}
 
-	// The miner confirmation window is defined as:
+// The miner confirmation window is defined as:
+func (p mainNetParams) RuleChangeActivationQuorum() uint32 {
 	//   target proof of work timespan / target proof of work spacing
-	RuleChangeActivationQuorum:     4032, // 10 % of RuleChangeActivationInterval * TicketsPerBlock
-	RuleChangeActivationMultiplier: 3,    // 75%
-	RuleChangeActivationDivisor:    4,
-	RuleChangeActivationInterval:   2016 * 4, // 4 weeks
-	Deployments: map[uint32][]ConsensusDeployment{
+	return p.RuleChangeActivationInterval() * 10 / 100 * uint32(p.TicketsPerBlock())
+	// 10 % of RuleChangeActivationInterval * TicketsPerBlock = 4032
+}
+
+// 75%
+func (p mainNetParams) RuleChangeActivationMultiplier() uint32 {
+	return 3
+}
+
+func (p mainNetParams) RuleChangeActivationDivisor() uint32 {
+	return 4
+}
+
+func (p mainNetParams) RuleChangeActivationInterval() uint32 {
+	return 2016 * 4 // 4 weeks
+}
+
+func (p mainNetParams) Deployments() map[uint32][]ConsensusDeployment {
+	return map[uint32][]ConsensusDeployment{
 		4: {{
 			Vote: Vote{
 				Id:          VoteIDSDiffAlgorithm,
@@ -189,63 +287,166 @@ var MainNetParams = Params{
 			StartTime:  1548633600, // Jan 28th, 2019
 			ExpireTime: 1580169600, // Jan 28th, 2020
 		}},
-	},
+	}
+}
 
-	// Enforce current block version once majority of the network has
-	// upgraded.
-	// 75% (750 / 1000)
-	// Reject previous block versions once a majority of the network has
-	// upgraded.
-	// 95% (950 / 1000)
-	BlockEnforceNumRequired: 750,
-	BlockRejectNumRequired:  950,
-	BlockUpgradeNumToCheck:  1000,
+// Enforce current block version once majority of the network has
+// upgraded.
+// 75% (750 / 1000)
+// Reject previous block versions once a majority of the network has
+// upgraded.
+// 95% (950 / 1000)
 
+func (p mainNetParams) BlockEnforceNumRequired() uint64 {
+	return 750
+}
+
+func (p mainNetParams) BlockRejectNumRequired() uint64 {
+	return 950
+}
+
+func (p mainNetParams) BlockUpgradeNumToCheck() uint64 {
+	return 1000
+}
+
+func (p mainNetParams) AcceptNonStdTxs() bool {
 	// AcceptNonStdTxs is a mempool param to either accept and relay
 	// non standard txs to the network or reject them
-	AcceptNonStdTxs: false,
+	return false
+}
 
-	// Address encoding magics
-	NetworkAddressPrefix: "D",
-	PubKeyAddrID:         [2]byte{0x13, 0x86}, // starts with Dk
-	PubKeyHashAddrID:     [2]byte{0x07, 0x3f}, // starts with Ds
-	PKHEdwardsAddrID:     [2]byte{0x07, 0x1f}, // starts with De
-	PKHSchnorrAddrID:     [2]byte{0x07, 0x01}, // starts with DS
-	ScriptHashAddrID:     [2]byte{0x07, 0x1a}, // starts with Dc
-	PrivateKeyID:         [2]byte{0x22, 0xde}, // starts with Pm
+// Address encoding magics
+func (p mainNetParams) NetworkAddressPrefix() string {
+	return "D"
+}
 
-	// BIP32 hierarchical deterministic extended key magics
-	HDPrivateKeyID: [4]byte{0x02, 0xfd, 0xa4, 0xe8}, // starts with dprv
-	HDPublicKeyID:  [4]byte{0x02, 0xfd, 0xa9, 0x26}, // starts with dpub
+func (p mainNetParams) PubKeyAddrID() [2]byte {
+	return [2]byte{0x13, 0x86} // starts with Dk
+}
 
-	// BIP44 coin type used in the hierarchical deterministic path for
-	// address generation.
-	SLIP0044CoinType: 42, // SLIP0044, Decred
-	LegacyCoinType:   20, // for backwards compatibility
+func (p mainNetParams) PubKeyHashAddrID() [2]byte {
+	return [2]byte{0x07, 0x3f} // starts with Ds
+}
 
-	// Decred PoS parameters
-	MinimumStakeDiff:        2 * 1e8, // 2 Coin
-	TicketPoolSize:          8192,
-	TicketsPerBlock:         5,
-	TicketMaturity:          256,
-	TicketExpiry:            40960, // 5*TicketPoolSize
-	CoinbaseMaturity:        256,
-	SStxChangeMaturity:      1,
-	TicketPoolSizeWeight:    4,
-	StakeDiffAlpha:          1, // Minimal
-	StakeDiffWindowSize:     144,
-	StakeDiffWindows:        20,
-	StakeVersionInterval:    144 * 2 * 7, // ~1 week
-	MaxFreshStakePerBlock:   20,          // 4*TicketsPerBlock
-	StakeEnabledHeight:      256 + 256,   // CoinbaseMaturity + TicketMaturity
-	StakeValidationHeight:   4096,        // ~14 days
-	StakeBaseSigScript:      []byte{0x00, 0x00},
-	StakeMajorityMultiplier: 3,
-	StakeMajorityDivisor:    4,
+func (p mainNetParams) PKHEdwardsAddrID() [2]byte {
+	return [2]byte{0x07, 0x1f} // starts with De
+}
 
-	// Decred organization related parameters
+func (p mainNetParams) PKHSchnorrAddrID() [2]byte {
+	return [2]byte{0x07, 0x01} // starts with DS
+}
+
+func (p mainNetParams) ScriptHashAddrID() [2]byte {
+	return [2]byte{0x07, 0x1a} // starts with Dc
+}
+
+func (p mainNetParams) PrivateKeyID() [2]byte {
+	return [2]byte{0x22, 0xde} // starts with Pm
+}
+
+// BIP32 hierarchical deterministic extended key magics
+func (p mainNetParams) HDPrivateKeyID() [4]byte {
+	return [4]byte{0x02, 0xfd, 0xa4, 0xe8} // starts with dprv
+}
+
+func (p mainNetParams) HDPublicKeyID() [4]byte {
+	return [4]byte{0x02, 0xfd, 0xa9, 0x26} // starts with dpub
+}
+
+// BIP44 coin type used in the hierarchical deterministic path for
+// address generation.
+func (p mainNetParams) SLIP0044CoinType() uint32 {
+	return 42 // SLIP0044, Decred
+}
+
+func (p mainNetParams) LegacyCoinType() uint32 {
+	return 20 // for backwards compatibility
+}
+
+// Decred PoS parameters
+
+func (p mainNetParams) MinimumStakeDiff() int64 {
+	return 2 * 1e8 // 2 Coin
+}
+
+func (p mainNetParams) TicketPoolSize() uint16 {
+	return 8192
+}
+
+func (p mainNetParams) TicketsPerBlock() uint16 {
+	return 5
+}
+
+func (p mainNetParams) TicketMaturity() uint16 {
+	return 256
+}
+
+func (p mainNetParams) TicketExpiry() uint32 {
+	return uint32(p.TicketsPerBlock() * p.TicketPoolSize()) //40960
+}
+
+func (p mainNetParams) CoinbaseMaturity() uint16 {
+	return 256
+}
+
+func (p mainNetParams) SStxChangeMaturity() uint16 {
+	return 1
+}
+
+func (p mainNetParams) TicketPoolSizeWeight() uint16 {
+	return 4
+}
+
+func (p mainNetParams) StakeDiffAlpha() uint16 {
+	return 1 // Minimal
+}
+
+func (p mainNetParams) StakeDiffWindowSize() int64 {
+	return 144
+}
+
+func (p mainNetParams) StakeDiffWindows() int64 {
+	return 20
+}
+
+func (p mainNetParams) StakeVersionInterval() int64 {
+	return p.StakeDiffWindowSize() * 2 * 7 // ~1 week
+}
+
+func (p mainNetParams) MaxFreshStakePerBlock() int64 {
+	return 4 * int64(p.TicketsPerBlock())
+}
+
+func (p mainNetParams) StakeEnabledHeight() int64 {
+	return int64(p.CoinbaseMaturity() + p.TicketMaturity())
+}
+
+func (p mainNetParams) StakeValidationHeight() int64 {
+	return 4096 // ~14 days
+}
+
+func (p mainNetParams) StakeBaseSigScript() []byte {
+	return []byte{0x00, 0x00}
+}
+
+func (p mainNetParams) StakeMajorityMultiplier() int32 {
+	return 3
+}
+
+func (p mainNetParams) StakeMajorityDivisor() int32 {
+	return 4
+}
+
+// Decred organization related parameters
+func (p mainNetParams) OrganizationPkScript() []byte {
 	// Organization address is Dcur2mcGjmENx4DhNqDctW5wJCVyT3Qeqkx
-	OrganizationPkScript:        hexDecode("a914f5916158e3e2c4551c1796708db8367207ed13bb87"),
-	OrganizationPkScriptVersion: 0,
-	BlockOneLedger:              BlockOneLedgerMainNet,
+	return hexDecode("a914f5916158e3e2c4551c1796708db8367207ed13bb87")
+}
+
+func (p mainNetParams) OrganizationPkScriptVersion() uint16 {
+	return 0
+}
+
+func (p mainNetParams) BlockOneLedger() []*TokenPayout {
+	return BlockOneLedgerMainNet
 }
