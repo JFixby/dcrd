@@ -93,48 +93,48 @@ type DNSSeed struct {
 // Params defines a Decred network by its parameters.  These parameters may be
 // used by Decred applications to differentiate networks as well as addresses
 // and keys for one network from those intended for use on another network.
-type Params struct {
+type Params interface {
 	// Name defines a human-readable identifier for the network.
-	Name string
+	Name() string
 
 	// Net defines the magic bytes used to identify the network.
-	Net wire.CurrencyNet
+	Net() wire.CurrencyNet
 
 	// DefaultPort defines the default peer-to-peer port for the network.
-	DefaultPort string
+	DefaultPort() string
 
 	// DNSSeeds defines a list of DNS seeds for the network that are used
 	// as one method to discover peers.
-	DNSSeeds []DNSSeed
+	DNSSeeds() []DNSSeed
 
 	// GenesisBlock defines the first block of the chain.
-	GenesisBlock *wire.MsgBlock
+	GenesisBlock() *wire.MsgBlock
 
 	// GenesisHash is the starting block hash.
-	GenesisHash *chainhash.Hash
+	GenesisHash() *chainhash.Hash
 
 	// PowLimit defines the highest allowed proof of work value for a block
 	// as a uint256.
-	PowLimit *big.Int
+	PowLimit() *big.Int
 
 	// PowLimitBits defines the highest allowed proof of work value for a
 	// block in compact form.
-	PowLimitBits uint32
+	PowLimitBits() uint32
 
 	// ReduceMinDifficulty defines whether the network should reduce the
 	// minimum required difficulty after a long enough period of time has
 	// passed without finding a block.  This is really only useful for test
 	// networks and should not be set on a main network.
-	ReduceMinDifficulty bool
+	ReduceMinDifficulty() bool
 
 	// MinDiffReductionTime is the amount of time after which the minimum
 	// required difficulty should be reduced when a block hasn't been found.
 	//
 	// NOTE: This only applies if ReduceMinDifficulty is true.
-	MinDiffReductionTime time.Duration
+	MinDiffReductionTime() time.Duration
 
 	// GenerateSupported specifies whether or not CPU mining is allowed.
-	GenerateSupported bool
+	GenerateSupported() bool
 
 	// MaximumBlockSizes are the maximum sizes of a block that can be
 	// generated on the network.  It is an array because the max block size
@@ -142,39 +142,39 @@ type Params struct {
 	// The first entry is the initial block size for the network, while the
 	// other entries are potential block size changes which take effect when
 	// the vote for the associated agenda succeeds.
-	MaximumBlockSizes []int
+	MaximumBlockSizes() []int
 
 	// MaxTxSize is the maximum number of bytes a serialized transaction can
 	// be in order to be considered valid by consensus.
-	MaxTxSize int
+	MaxTxSize() int
 
 	// TargetTimePerBlock is the desired amount of time to generate each
 	// block.
-	TargetTimePerBlock time.Duration
+	TargetTimePerBlock() time.Duration
 
 	// WorkDiffAlpha is the stake difficulty EMA calculation alpha (smoothing)
 	// value. It is different from a normal EMA alpha. Closer to 1 --> smoother.
-	WorkDiffAlpha int64
+	WorkDiffAlpha() int64
 
 	// WorkDiffWindowSize is the number of windows (intervals) used for calculation
 	// of the exponentially weighted average.
-	WorkDiffWindowSize int64
+	WorkDiffWindowSize() int64
 
 	// WorkDiffWindows is the number of windows (intervals) used for calculation
 	// of the exponentially weighted average.
-	WorkDiffWindows int64
+	WorkDiffWindows() int64
 
 	// TargetTimespan is the desired amount of time that should elapse
 	// before the block difficulty requirement is examined to determine how
 	// it should be changed in order to maintain the desired block
 	// generation rate.  This value should correspond to the product of
 	// WorkDiffWindowSize and TimePerBlock above.
-	TargetTimespan time.Duration
+	TargetTimespan() time.Duration
 
 	// RetargetAdjustmentFactor is the adjustment factor used to limit
 	// the minimum and maximum amount of adjustment that can occur between
 	// difficulty retargets.
-	RetargetAdjustmentFactor int64
+	RetargetAdjustmentFactor() int64
 
 	// Subsidy parameters.
 	//
@@ -186,33 +186,33 @@ type Params struct {
 	// Caveat: Don't overflow the int64 register!!
 
 	// BaseSubsidy is the starting subsidy amount for mined blocks.
-	BaseSubsidy int64
+	BaseSubsidy() int64
 
 	// Subsidy reduction multiplier.
-	MulSubsidy int64
+	MulSubsidy() int64
 
 	// Subsidy reduction divisor.
-	DivSubsidy int64
+	DivSubsidy() int64
 
 	// SubsidyReductionInterval is the reduction interval in blocks.
-	SubsidyReductionInterval int64
+	SubsidyReductionInterval() int64
 
 	// WorkRewardProportion is the comparative amount of the subsidy given for
 	// creating a block.
-	WorkRewardProportion uint16
+	WorkRewardProportion() uint16
 
 	// StakeRewardProportion is the comparative amount of the subsidy given for
 	// casting stake votes (collectively, per block).
-	StakeRewardProportion uint16
+	StakeRewardProportion() uint16
 
 	// BlockTaxProportion is the inverse of the percentage of funds for each
 	// block to allocate to the developer organization.
 	// e.g. 10% --> 10 (or 1 / (1/10))
 	// Special case: disable taxes with a value of 0
-	BlockTaxProportion uint16
+	BlockTaxProportion() uint16
 
 	// Checkpoints ordered from oldest to newest.
-	Checkpoints []Checkpoint
+	Checkpoints() []Checkpoint
 
 	// These fields are related to voting on consensus rule changes as
 	// defined by BIP0009.
@@ -225,148 +225,148 @@ type Params struct {
 	//
 	// Deployments define the specific consensus rule changes to be voted
 	// on for the stake version (the map key).
-	RuleChangeActivationQuorum     uint32
-	RuleChangeActivationMultiplier uint32
-	RuleChangeActivationDivisor    uint32
-	RuleChangeActivationInterval   uint32
-	Deployments                    map[uint32][]ConsensusDeployment
+	RuleChangeActivationQuorum() uint32
+	RuleChangeActivationMultiplier() uint32
+	RuleChangeActivationDivisor() uint32
+	RuleChangeActivationInterval() uint32
+	Deployments() map[uint32][]ConsensusDeployment
 
 	// Enforce current block version once network has upgraded.
-	BlockEnforceNumRequired uint64
+	BlockEnforceNumRequired() uint64
 
 	// Reject previous block versions once network has upgraded.
-	BlockRejectNumRequired uint64
+	BlockRejectNumRequired() uint64
 
 	// The number of nodes to check.
-	BlockUpgradeNumToCheck uint64
+	BlockUpgradeNumToCheck() uint64
 
 	// AcceptNonStdTxs is a mempool param to either accept and relay
 	// non standard txs to the network or reject them
-	AcceptNonStdTxs bool
+	AcceptNonStdTxs() bool
 
 	// NetworkAddressPrefix is the first letter of the network
 	// for any given address encoded as a string.
-	NetworkAddressPrefix string
+	NetworkAddressPrefix() string
 
 	// Address encoding magics
-	PubKeyAddrID     [2]byte // First 2 bytes of a P2PK address
-	PubKeyHashAddrID [2]byte // First 2 bytes of a P2PKH address
-	PKHEdwardsAddrID [2]byte // First 2 bytes of an Edwards P2PKH address
-	PKHSchnorrAddrID [2]byte // First 2 bytes of a secp256k1 Schnorr P2PKH address
-	ScriptHashAddrID [2]byte // First 2 bytes of a P2SH address
-	PrivateKeyID     [2]byte // First 2 bytes of a WIF private key
+	PubKeyAddrID() [2]byte     // First 2 bytes of a P2PK address
+	PubKeyHashAddrID() [2]byte // First 2 bytes of a P2PKH address
+	PKHEdwardsAddrID() [2]byte // First 2 bytes of an Edwards P2PKH address
+	PKHSchnorrAddrID() [2]byte // First 2 bytes of a secp256k1 Schnorr P2PKH address
+	ScriptHashAddrID() [2]byte // First 2 bytes of a P2SH address
+	PrivateKeyID() [2]byte     // First 2 bytes of a WIF private key
 
 	// BIP32 hierarchical deterministic extended key magics
-	HDPrivateKeyID [4]byte
-	HDPublicKeyID  [4]byte
+	HDPrivateKeyID() [4]byte
+	HDPublicKeyID() [4]byte
 
 	// SLIP-0044 registered coin type used for BIP44, used in the hierarchical
 	// deterministic path for address generation.
 	// All SLIP-0044 registered coin types are are defined here:
 	// https://github.com/satoshilabs/slips/blob/master/slip-0044.md
-	SLIP0044CoinType uint32
+	SLIP0044CoinType() uint32
 
 	// Legacy BIP44 coin type used in the hierarchical deterministic path for
 	// address generation. Previous name was HDCoinType, the LegacyCoinType
 	// was introduced for backwards compatibility. Usually, SLIP0044CoinType
 	// should be used instead.
-	LegacyCoinType uint32
+	LegacyCoinType() uint32
 
 	// MinimumStakeDiff if the minimum amount of Atoms required to purchase a
 	// stake ticket.
-	MinimumStakeDiff int64
+	MinimumStakeDiff() int64
 
 	// Ticket pool sizes for Decred PoS. This denotes the number of possible
 	// buckets/number of different ticket numbers. It is also the number of
 	// possible winner numbers there are.
-	TicketPoolSize uint16
+	TicketPoolSize() uint16
 
 	// Average number of tickets per block for Decred PoS.
-	TicketsPerBlock uint16
+	TicketsPerBlock() uint16
 
 	// Number of blocks for tickets to mature (spendable at TicketMaturity+1).
-	TicketMaturity uint16
+	TicketMaturity() uint16
 
 	// Number of blocks for tickets to expire after they have matured. This MUST
 	// be >= (StakeEnabledHeight + StakeValidationHeight).
-	TicketExpiry uint32
+	TicketExpiry() uint32
 
 	// CoinbaseMaturity is the number of blocks required before newly mined
 	// coins (coinbase transactions) can be spent.
-	CoinbaseMaturity uint16
+	CoinbaseMaturity() uint16
 
 	// Maturity for spending SStx change outputs.
-	SStxChangeMaturity uint16
+	SStxChangeMaturity() uint16
 
 	// TicketPoolSizeWeight is the multiplicative weight applied to the
 	// ticket pool size difference between a window period and its target
 	// when determining the stake system.
-	TicketPoolSizeWeight uint16
+	TicketPoolSizeWeight() uint16
 
 	// StakeDiffAlpha is the stake difficulty EMA calculation alpha (smoothing)
 	// value. It is different from a normal EMA alpha. Closer to 1 --> smoother.
-	StakeDiffAlpha int64
+	StakeDiffAlpha() int64
 
 	// StakeDiffWindowSize is the number of blocks used for each interval in
 	// exponentially weighted average.
-	StakeDiffWindowSize int64
+	StakeDiffWindowSize() int64
 
 	// StakeDiffWindows is the number of windows (intervals) used for calculation
 	// of the exponentially weighted average.
-	StakeDiffWindows int64
+	StakeDiffWindows() int64
 
 	// StakeVersionInterval determines the interval where the stake version
 	// is calculated.
-	StakeVersionInterval int64
+	StakeVersionInterval() int64
 
 	// MaxFreshStakePerBlock is the maximum number of new tickets that may be
 	// submitted per block.
-	MaxFreshStakePerBlock uint8
+	MaxFreshStakePerBlock() uint8
 
 	// StakeEnabledHeight is the height in which the first ticket could possibly
 	// mature.
-	StakeEnabledHeight int64
+	StakeEnabledHeight() int64
 
 	// StakeValidationHeight is the height at which votes (SSGen) are required
 	// to add a new block to the top of the blockchain. This height is the
 	// first block that will be voted on, but will include in itself no votes.
-	StakeValidationHeight int64
+	StakeValidationHeight() int64
 
 	// StakeBaseSigScript is the consensus stakebase signature script for all
 	// votes on the network. This isn't signed in any way, so without forcing
 	// it to be this value miners/daemons could freely change it.
-	StakeBaseSigScript []byte
+	StakeBaseSigScript() []byte
 
 	// StakeMajorityMultiplier and StakeMajorityDivisor are used
 	// to calculate the super majority of stake votes using integer math as
 	// such: X*StakeMajorityMultiplier/StakeMajorityDivisor
-	StakeMajorityMultiplier int32
-	StakeMajorityDivisor    int32
+	StakeMajorityMultiplier() int32
+	StakeMajorityDivisor() int32
 
 	// OrganizationPkScript is the output script for block taxes to be
 	// distributed to in every block's coinbase. It should ideally be a P2SH
 	// multisignature address.  OrganizationPkScriptVersion is the version
 	// of the output script.  Until PoS hardforking is implemented, this
 	// version must always match for a block to validate.
-	OrganizationPkScript        []byte
-	OrganizationPkScriptVersion uint16
+	OrganizationPkScript() []byte
+	OrganizationPkScriptVersion() uint16
 
 	// BlockOneLedger specifies the list of payouts in the coinbase of
 	// block height 1. If there are no payouts to be given, set this
 	// to an empty slice.
-	BlockOneLedger []*TokenPayout
+	BlockOneLedger() []*TokenPayout
 }
 
 // XPrivKeyID returns the hierarchical deterministic extended private key magic
 // version bytes for the network the parameters define.
-func (p *Params) XPrivKeyID() [4]byte {
-	return p.HDPrivateKeyID
+func XPrivKeyID(p Params) [4]byte {
+	return p.HDPrivateKeyID()
 }
 
 // XPubKeyID returns the hierarchical deterministic extended public key magic
 // version bytes for the network the parameters define.
-func (p *Params) XPubKeyID() [4]byte {
-	return p.HDPublicKeyID
+func XPubKeyID(p Params) [4]byte {
+	return p.HDPublicKeyID()
 }
 
 var (
@@ -398,7 +398,7 @@ var (
 	pkhSchnorrAddrIDs = make(map[[2]byte]struct{})
 	scriptHashAddrIDs = make(map[[2]byte]struct{})
 	hdPrivToPubKeyIDs = make(map[[4]byte][]byte)
-	netPrefixToParams = make(map[string]*Params)
+	netPrefixToParams = make(map[string]Params)
 )
 
 // String returns the hostname of the DNS seed in human-readable form.
@@ -415,19 +415,19 @@ func (d DNSSeed) String() string {
 // as early as possible.  Then, library packages may lookup networks or network
 // parameters based on inputs and work regardless of the network being standard
 // or not.
-func Register(params *Params) error {
-	if _, ok := registeredNets[params.Net]; ok {
+func Register(params Params) error {
+	if _, ok := registeredNets[params.Net()]; ok {
 		return ErrDuplicateNet
 	}
-	if _, ok := netPrefixToParams[params.NetworkAddressPrefix]; ok {
+	if _, ok := netPrefixToParams[params.NetworkAddressPrefix()]; ok {
 		return ErrDuplicateNetAddrPrefix
 	}
-	registeredNets[params.Net] = struct{}{}
-	pubKeyAddrIDs[params.PubKeyAddrID] = struct{}{}
-	pubKeyHashAddrIDs[params.PubKeyHashAddrID] = struct{}{}
-	scriptHashAddrIDs[params.ScriptHashAddrID] = struct{}{}
-	hdPrivToPubKeyIDs[params.HDPrivateKeyID] = params.HDPublicKeyID[:]
-	netPrefixToParams[params.NetworkAddressPrefix] = params
+	registeredNets[params.Net()] = struct{}{}
+	pubKeyAddrIDs[params.PubKeyAddrID()] = struct{}{}
+	pubKeyHashAddrIDs[params.PubKeyHashAddrID()] = struct{}{}
+	scriptHashAddrIDs[params.ScriptHashAddrID()] = struct{}{}
+	hdPrivToPubKeyIDs[params.HDPrivateKeyID()] = params.HDPublicKeyID()[:]
+	netPrefixToParams[params.NetworkAddressPrefix()] = params
 	return nil
 }
 
@@ -502,7 +502,7 @@ func HDPrivateKeyToPublicKeyID(id []byte) ([]byte, error) {
 
 // ParamsByNetAddrPrefix the parameters registered for  the provided network
 // address prefix.  An error is returned if the prefix is not registered.
-func ParamsByNetAddrPrefix(prefix string) (*Params, error) {
+func ParamsByNetAddrPrefix(prefix string) (Params, error) {
 	params, ok := netPrefixToParams[prefix]
 	if !ok {
 		return nil, ErrUnknownNetAddrPrefix
@@ -539,13 +539,13 @@ func hexDecode(hexStr string) []byte {
 
 // BlockOneSubsidy returns the total subsidy of block height 1 for the
 // network.
-func (p *Params) BlockOneSubsidy() int64 {
-	if len(p.BlockOneLedger) == 0 {
+func BlockOneSubsidy(p Params) int64 {
+	if len(p.BlockOneLedger()) == 0 {
 		return 0
 	}
 
 	sum := int64(0)
-	for _, output := range p.BlockOneLedger {
+	for _, output := range p.BlockOneLedger() {
 		sum += output.Amount
 	}
 
@@ -554,17 +554,17 @@ func (p *Params) BlockOneSubsidy() int64 {
 
 // TotalSubsidyProportions is the sum of WorkReward, StakeReward, and BlockTax
 // proportions.
-func (p *Params) TotalSubsidyProportions() uint16 {
-	return p.WorkRewardProportion + p.StakeRewardProportion + p.BlockTaxProportion
+func TotalSubsidyProportions(p Params) uint16 {
+	return p.WorkRewardProportion() + p.StakeRewardProportion() + p.BlockTaxProportion()
 }
 
 // LatestCheckpointHeight is the height of the latest checkpoint block in the
 // parameters.
-func (p *Params) LatestCheckpointHeight() int64 {
-	if len(p.Checkpoints) == 0 {
+func LatestCheckpointHeight(p Params) int64 {
+	if len(p.Checkpoints()) == 0 {
 		return 0
 	}
-	return p.Checkpoints[len(p.Checkpoints)-1].Height
+	return p.Checkpoints()[len(p.Checkpoints())-1].Height
 }
 
 func init() {
