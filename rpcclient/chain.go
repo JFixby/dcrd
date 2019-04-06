@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,10 +9,13 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/decred/dcrd/dcrjson/v2"
 	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/gcs"
+	"github.com/decred/dcrd/gcs/blockcf"
 	"github.com/decred/dcrd/wire"
 )
 
@@ -225,6 +228,44 @@ func (c *Client) GetDifficultyAsync() FutureGetDifficultyResult {
 // minimum difficulty.
 func (c *Client) GetDifficulty() (float64, error) {
 	return c.GetDifficultyAsync().Receive()
+}
+
+// FutureGetBlockChainInfoResult is a future promise to deliver the result of a
+// GetBlockChainInfoAsync RPC invocation (or an applicable error).
+type FutureGetBlockChainInfoResult chan *response
+
+// Receive waits for the response promised by the future and returns the info
+// provided by the server.
+func (r FutureGetBlockChainInfoResult) Receive() (*dcrjson.GetBlockChainInfoResult, error) {
+	res, err := receiveFuture(r)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal result as a getblockchaininfo result object.
+	var blockchainInfoRes dcrjson.GetBlockChainInfoResult
+	err = json.Unmarshal(res, &blockchainInfoRes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &blockchainInfoRes, nil
+}
+
+// GetBlockChainInfoAsync returns an instance of a type that can be used to get
+// the result of the RPC at some future time by invoking the Receive function on
+// the returned instance.
+//
+// See GetBlockChainInfo for the blocking version and more details.
+func (c *Client) GetBlockChainInfoAsync() FutureGetBlockChainInfoResult {
+	cmd := dcrjson.NewGetBlockChainInfoCmd()
+	return c.sendCmd(cmd)
+}
+
+// GetBlockChainInfo returns information about the current state of the block
+// chain.
+func (c *Client) GetBlockChainInfo() (*dcrjson.GetBlockChainInfoResult, error) {
+	return c.GetBlockChainInfoAsync().Receive()
 }
 
 // FutureGetBlockHashResult is a future promise to deliver the result of a
@@ -545,6 +586,42 @@ func (r FutureVerifyChainResult) Receive() (bool, error) {
 	return verified, nil
 }
 
+// FutureGetChainTipsResult is a future promise to deliver the result of a
+// GetChainTipsAsync RPC invocation (or an applicable error).
+type FutureGetChainTipsResult chan *response
+
+// Receive waits for the response promised by the future and returns slice of
+// all known tips in the block tree.
+func (r FutureGetChainTipsResult) Receive() ([]dcrjson.GetChainTipsResult, error) {
+	res, err := receiveFuture(r)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal the result.
+	var chainTips []dcrjson.GetChainTipsResult
+	err = json.Unmarshal(res, &chainTips)
+	if err != nil {
+		return nil, err
+	}
+	return chainTips, nil
+}
+
+// GetChainTipsAsync returns an instance of a type that can be used to get the
+// result of the RPC at some future time by invoking the Receive function on the
+// returned instance.
+//
+// See GetChainTips for the blocking version and more details.
+func (c *Client) GetChainTipsAsync() FutureGetChainTipsResult {
+	cmd := dcrjson.NewGetChainTipsCmd()
+	return c.sendCmd(cmd)
+}
+
+// GetChainTips returns all known tips in the block tree.
+func (c *Client) GetChainTips() ([]dcrjson.GetChainTipsResult, error) {
+	return c.GetChainTipsAsync().Receive()
+}
+
 // VerifyChainAsync returns an instance of a type that can be used to get the
 // result of the RPC at some future time by invoking the Receive function on the
 // returned instance.
@@ -701,4 +778,146 @@ func (c *Client) RescanAsync(blockHashes []chainhash.Hash) FutureRescanResult {
 // chain, but they do need to be adjacent to each other.
 func (c *Client) Rescan(blockHashes []chainhash.Hash) (*dcrjson.RescanResult, error) {
 	return c.RescanAsync(blockHashes).Receive()
+}
+
+// FutureGetCFilterResult is a future promise to deliver the result of a
+// GetCFilterAsync RPC invocation (or an applicable error).
+type FutureGetCFilterResult chan *response
+
+// Receive waits for the response promised by the future and returns the
+// discovered rescan data.
+func (r FutureGetCFilterResult) Receive() (*gcs.Filter, error) {
+	res, err := receiveFuture(r)
+	if err != nil {
+		return nil, err
+	}
+
+	var filterHex string
+	err = json.Unmarshal(res, &filterHex)
+	if err != nil {
+		return nil, err
+	}
+	filterNBytes, err := hex.DecodeString(filterHex)
+	if err != nil {
+		return nil, err
+	}
+
+	return gcs.FromNBytes(blockcf.P, filterNBytes)
+}
+
+// GetCFilterAsync returns an instance of a type that can be used to get the
+// result of the RPC at some future time by invoking the Receive function on the
+// returned instance.
+//
+// See GetCFilter for the blocking version and more details.
+func (c *Client) GetCFilterAsync(blockHash *chainhash.Hash, filterType wire.FilterType) FutureGetCFilterResult {
+	var ft string
+	switch filterType {
+	case wire.GCSFilterRegular:
+		ft = "regular"
+	case wire.GCSFilterExtended:
+		ft = "extended"
+	default:
+		return futureError(errors.New("unknown filter type"))
+	}
+
+	cmd := dcrjson.NewGetCFilterCmd(blockHash.String(), ft)
+	return c.sendCmd(cmd)
+}
+
+// GetCFilter returns the committed filter of type filterType for a block.
+func (c *Client) GetCFilter(blockHash *chainhash.Hash, filterType wire.FilterType) (*gcs.Filter, error) {
+	return c.GetCFilterAsync(blockHash, filterType).Receive()
+}
+
+// FutureGetCFilterHeaderResult is a future promise to deliver the result of a
+// GetCFilterHeaderAsync RPC invocation (or an applicable error).
+type FutureGetCFilterHeaderResult chan *response
+
+// Receive waits for the response promised by the future and returns the
+// discovered rescan data.
+func (r FutureGetCFilterHeaderResult) Receive() (*chainhash.Hash, error) {
+	res, err := receiveFuture(r)
+	if err != nil {
+		return nil, err
+	}
+
+	var filterHeaderHex string
+	err = json.Unmarshal(res, &filterHeaderHex)
+	if err != nil {
+		return nil, err
+	}
+
+	return chainhash.NewHashFromStr(filterHeaderHex)
+}
+
+// GetCFilterHeaderAsync returns an instance of a type that can be used to get
+// the result of the RPC at some future time by invoking the Receive function on
+// the returned instance.
+//
+// See GetCFilterHeader for the blocking version and more details.
+func (c *Client) GetCFilterHeaderAsync(blockHash *chainhash.Hash, filterType wire.FilterType) FutureGetCFilterHeaderResult {
+	var ft string
+	switch filterType {
+	case wire.GCSFilterRegular:
+		ft = "regular"
+	case wire.GCSFilterExtended:
+		ft = "extended"
+	default:
+		return futureError(errors.New("unknown filter type"))
+	}
+
+	cmd := dcrjson.NewGetCFilterHeaderCmd(blockHash.String(), ft)
+	return c.sendCmd(cmd)
+}
+
+// GetCFilterHeader returns the committed filter header hash of type filterType
+// for a block.
+func (c *Client) GetCFilterHeader(blockHash *chainhash.Hash, filterType wire.FilterType) (*chainhash.Hash, error) {
+	return c.GetCFilterHeaderAsync(blockHash, filterType).Receive()
+}
+
+// FutureEstimateSmartFeeResult is a future promise to deliver the result of a
+// EstimateSmartFee RPC invocation (or an applicable error).
+type FutureEstimateSmartFeeResult chan *response
+
+// Receive waits for the response promised by the future and returns a fee
+// estimation for the given target confirmation window and mode.
+func (r FutureEstimateSmartFeeResult) Receive() (float64, error) {
+	res, err := receiveFuture(r)
+	if err != nil {
+		return 0, err
+	}
+
+	// Unmarshal the result as a float64.
+	var dcrPerKB float64
+	err = json.Unmarshal(res, &dcrPerKB)
+	if err != nil {
+		return 0, err
+	}
+	return dcrPerKB, nil
+}
+
+// EstimateSmartFeeAsync returns an instance of a type that can be used to get
+// the result of the RPC at some future time by invoking the Receive function on
+// the returned instance.
+//
+// See EstimateSmartFee for the blocking version and more details.
+func (c *Client) EstimateSmartFeeAsync(confirmations int64, mode dcrjson.EstimateSmartFeeMode) FutureEstimateSmartFeeResult {
+	cmd := dcrjson.NewEstimateSmartFeeCmd(confirmations, &mode)
+	return c.sendCmd(cmd)
+}
+
+// EstimateSmartFee returns an estimation of a transaction fee rate (in dcr/KB)
+// that new transactions should pay if they desire to be mined in up to
+// 'confirmations' blocks.
+//
+// The mode parameter (roughly) selects the different thresholds for accepting
+// an estimation as reasonable, allowing users to select different trade-offs
+// between probability of the transaction being mined in the given target
+// confirmation range and minimization of fees paid.
+//
+// As of 2019-01, only the default conservative mode is supported by dcrd.
+func (c *Client) EstimateSmartFee(confirmations int64, mode dcrjson.EstimateSmartFeeMode) (float64, error) {
+	return c.EstimateSmartFeeAsync(confirmations, mode).Receive()
 }

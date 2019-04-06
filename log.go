@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2017 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,23 +10,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/btcsuite/btclog"
 	"github.com/decred/dcrd/addrmgr"
 	"github.com/decred/dcrd/blockchain"
 	"github.com/decred/dcrd/blockchain/indexers"
 	"github.com/decred/dcrd/blockchain/stake"
 	"github.com/decred/dcrd/connmgr"
 	"github.com/decred/dcrd/database"
-	"github.com/decred/dcrd/mempool"
+	"github.com/decred/dcrd/fees"
+	"github.com/decred/dcrd/mempool/v2"
 	"github.com/decred/dcrd/peer"
 	"github.com/decred/dcrd/txscript"
+	"github.com/decred/slog"
 	"github.com/jrick/logrotate/rotator"
-)
-
-const (
-	// maxRejectReasonLen is the maximum length of a sanitized reject reason
-	// that will be logged.
-	maxRejectReasonLen = 250
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
@@ -53,7 +48,7 @@ var (
 	// backendLog is the logging backend used to create all subsystem loggers.
 	// The backend must not be used before the log rotator has been initialized,
 	// or data races and/or nil pointer dereferences will occur.
-	backendLog = btclog.NewBackend(logWriter{})
+	backendLog = slog.NewBackend(logWriter{})
 
 	// logRotator is one of the logging outputs.  It should be closed on
 	// application shutdown.
@@ -61,12 +56,13 @@ var (
 
 	adxrLog = backendLog.Logger("ADXR")
 	amgrLog = backendLog.Logger("AMGR")
-	cmgrLog = backendLog.Logger("CMGR")
 	bcdbLog = backendLog.Logger("BCDB")
 	bmgrLog = backendLog.Logger("BMGR")
-	dcrdLog = backendLog.Logger("DCRD")
 	chanLog = backendLog.Logger("CHAN")
+	cmgrLog = backendLog.Logger("CMGR")
+	dcrdLog = backendLog.Logger("DCRD")
 	discLog = backendLog.Logger("DISC")
+	feesLog = backendLog.Logger("FEES")
 	indxLog = backendLog.Logger("INDX")
 	minrLog = backendLog.Logger("MINR")
 	peerLog = backendLog.Logger("PEER")
@@ -80,26 +76,28 @@ var (
 // Initialize package-global logger variables.
 func init() {
 	addrmgr.UseLogger(amgrLog)
+	blockchain.UseLogger(chanLog)
 	connmgr.UseLogger(cmgrLog)
 	database.UseLogger(bcdbLog)
-	blockchain.UseLogger(chanLog)
+	fees.UseLogger(feesLog)
 	indexers.UseLogger(indxLog)
-	peer.UseLogger(peerLog)
-	txscript.UseLogger(scrpLog)
-	stake.UseLogger(stkeLog)
 	mempool.UseLogger(txmpLog)
+	peer.UseLogger(peerLog)
+	stake.UseLogger(stkeLog)
+	txscript.UseLogger(scrpLog)
 }
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.
-var subsystemLoggers = map[string]btclog.Logger{
+var subsystemLoggers = map[string]slog.Logger{
 	"ADXR": adxrLog,
 	"AMGR": amgrLog,
-	"CMGR": cmgrLog,
 	"BCDB": bcdbLog,
 	"BMGR": bmgrLog,
-	"DCRD": dcrdLog,
 	"CHAN": chanLog,
+	"CMGR": cmgrLog,
+	"DCRD": dcrdLog,
 	"DISC": discLog,
+	"FEES": feesLog,
 	"INDX": indxLog,
 	"MINR": minrLog,
 	"PEER": peerLog,
@@ -140,7 +138,7 @@ func setLogLevel(subsystemID string, logLevel string) {
 	}
 
 	// Defaults to info if the log level is invalid.
-	level, _ := btclog.LevelFromString(logLevel)
+	level, _ := slog.LevelFromString(logLevel)
 	logger.SetLevel(level)
 }
 

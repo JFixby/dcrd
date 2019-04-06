@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -75,26 +75,19 @@ func (b *Block) Bytes() ([]byte, error) {
 	return serializedBlock, nil
 }
 
-// BlockHeaderBytes returns the serialized bytes for the Block's header.  This is
-// equivalent to calling Serialize on the underlying wire.MsgBlock, but it
-// returns a byte slice.
+// BlockHeaderBytes returns the serialized bytes for the Block's header.  This
+// is equivalent to calling Serialize on the underlying wire.MsgBlock.Header,
+// but it returns a byte slice.
 func (b *Block) BlockHeaderBytes() ([]byte, error) {
-	// Return the cached serialized bytes if it has already been generated.
-	if len(b.serializedBlock) != 0 {
-		return b.serializedBlock, nil
-	}
-
-	// Serialize the MsgBlock.
+	// Serialize the BlockHeader.
 	var w bytes.Buffer
 	w.Grow(wire.MaxBlockHeaderPayload)
 	err := b.msgBlock.Header.Serialize(&w)
 	if err != nil {
 		return nil, err
 	}
-	serializedBlockHeader := w.Bytes()
 
-	// Cache the serialized bytes and return them.
-	return serializedBlockHeader, nil
+	return w.Bytes(), nil
 }
 
 // Hash returns the block identifier hash for the Block.  This is equivalent to
@@ -321,15 +314,13 @@ func NewBlockDeepCopyCoinbase(msgBlock *wire.MsgBlock) *Block {
 
 	lenTxs := len(msgBlock.Transactions)
 	mtxsCopy := make([]*wire.MsgTx, lenTxs)
-	for i, mtx := range msgBlock.Transactions {
-		mtxsCopy[i] = mtx
-	}
+	copy(mtxsCopy, msgBlock.Transactions)
+
 	msgBlockCopy.Transactions = mtxsCopy
 	lenStxs := len(msgBlock.STransactions)
 	smtxsCopy := make([]*wire.MsgTx, lenStxs)
-	for i, smtx := range msgBlock.STransactions {
-		smtxsCopy[i] = smtx
-	}
+	copy(smtxsCopy, msgBlock.STransactions)
+
 	msgBlockCopy.STransactions = smtxsCopy
 	msgBlockCopy.Header = msgBlock.Header
 

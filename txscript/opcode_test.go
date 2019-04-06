@@ -1,5 +1,5 @@
-// Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -20,15 +20,10 @@ import (
 // executing transaction scripts to enforce additional checks.  Note these flags
 // are different than what is required for the consensus rules in that they are
 // more strict.
-const testScriptFlags = ScriptBip16 |
-	ScriptVerifyDERSignatures |
-	ScriptVerifyStrictEncoding |
-	ScriptVerifyMinimalData |
-	ScriptDiscourageUpgradableNops |
+const testScriptFlags = ScriptDiscourageUpgradableNops |
 	ScriptVerifyCleanStack |
 	ScriptVerifyCheckLockTimeVerify |
 	ScriptVerifyCheckSequenceVerify |
-	ScriptVerifyLowS |
 	ScriptVerifySHA256
 
 // TestOpcodeDisabled tests the opcodeDisabled function manually because all
@@ -42,10 +37,11 @@ func TestOpcodeDisabled(t *testing.T) {
 	}
 	for _, opcodeVal := range tests {
 		pop := parsedOpcode{opcode: &opcodeArray[opcodeVal], data: nil}
-		if err := opcodeDisabled(&pop, nil); err != ErrStackOpDisabled {
+		err := opcodeDisabled(&pop, nil)
+		if !IsErrorCode(err, ErrDisabledOpcode) {
 			t.Errorf("opcodeDisabled: unexpected error - got %v, "+
-				"want %v", err, ErrStackOpDisabled)
-			return
+				"want %v", err, ErrDisabledOpcode)
+			continue
 		}
 	}
 }
@@ -92,7 +88,7 @@ func TestOpcodeDisasm(t *testing.T) {
 		0xa9: "OP_HASH160", 0xaa: "OP_HASH256", 0xab: "OP_CODESEPARATOR",
 		0xac: "OP_CHECKSIG", 0xad: "OP_CHECKSIGVERIFY",
 		0xae: "OP_CHECKMULTISIG", 0xaf: "OP_CHECKMULTISIGVERIFY",
-		0xf9: "OP_SMALLDATA", 0xfa: "OP_SMALLINTEGER",
+		0xf9: "OP_INVALID249", 0xfa: "OP_SMALLINTEGER",
 		0xfb: "OP_PUBKEYS", 0xfd: "OP_PUBKEYHASH", 0xfe: "OP_PUBKEY",
 		0xff: "OP_INVALIDOPCODE", 0xba: "OP_SSTX", 0xbb: "OP_SSGEN",
 		0xbc: "OP_SSRTX", 0xbd: "OP_SSTXCHANGE", 0xbe: "OP_CHECKSIGALT",
@@ -143,7 +139,7 @@ func TestOpcodeDisasm(t *testing.T) {
 
 		// OP_UNKNOWN#.
 		case opcodeVal >= 0xc1 && opcodeVal <= 0xf8 || opcodeVal == 0xfc:
-			expectedStr = "OP_UNKNOWN" + strconv.Itoa(int(opcodeVal))
+			expectedStr = "OP_UNKNOWN" + strconv.Itoa(opcodeVal)
 		}
 
 		pop := parsedOpcode{opcode: &opcodeArray[opcodeVal], data: data}
@@ -209,7 +205,7 @@ func TestOpcodeDisasm(t *testing.T) {
 
 		// OP_UNKNOWN#.
 		case opcodeVal >= 0xc1 && opcodeVal <= 0xf8 || opcodeVal == 0xfc:
-			expectedStr = "OP_UNKNOWN" + strconv.Itoa(int(opcodeVal))
+			expectedStr = "OP_UNKNOWN" + strconv.Itoa(opcodeVal)
 		}
 
 		pop := parsedOpcode{opcode: &opcodeArray[opcodeVal], data: data}
@@ -508,12 +504,12 @@ func TestNewlyEnabledOpCodes(t *testing.T) {
 func randByteSliceSlice(i int, maxLen int, src int) [][]byte {
 	r := rand.New(rand.NewSource(int64(src)))
 
-	slices := make([][]byte, i, i)
+	slices := make([][]byte, i)
 	for j := 0; j < i; j++ {
 		for {
 			sz := r.Intn(maxLen) + 1
 
-			sl := make([]byte, sz, sz)
+			sl := make([]byte, sz)
 			for k := 0; k < sz; k++ {
 				randByte := r.Intn(255)
 				sl[k] = uint8(randByte)

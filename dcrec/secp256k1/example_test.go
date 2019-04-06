@@ -23,7 +23,7 @@ func Example_signMessage() {
 		fmt.Println(err)
 		return
 	}
-	privKey, pubKey := secp256k1.PrivKeyFromBytes(secp256k1.S256(), pkBytes)
+	privKey, pubKey := secp256k1.PrivKeyFromBytes(pkBytes)
 
 	// Sign a message using the private key.
 	message := "test message"
@@ -57,7 +57,7 @@ func Example_verifySignature() {
 		fmt.Println(err)
 		return
 	}
-	pubKey, err := secp256k1.ParsePubKey(pubKeyBytes, secp256k1.S256())
+	pubKey, err := secp256k1.ParsePubKey(pubKeyBytes)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -72,7 +72,7 @@ func Example_verifySignature() {
 		fmt.Println(err)
 		return
 	}
-	signature, err := secp256k1.ParseSignature(sigBytes, secp256k1.S256())
+	signature, err := secp256k1.ParseDERSignature(sigBytes)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -99,7 +99,7 @@ func Example_encryptMessage() {
 		fmt.Println(err)
 		return
 	}
-	pubKey, err := secp256k1.ParsePubKey(pubKeyBytes, secp256k1.S256())
+	pubKey, err := secp256k1.ParsePubKey(pubKeyBytes)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -121,7 +121,7 @@ func Example_encryptMessage() {
 		return
 	}
 	// note that we already have corresponding pubKey
-	privKey, _ := secp256k1.PrivKeyFromBytes(secp256k1.S256(), pkBytes)
+	privKey, _ := secp256k1.PrivKeyFromBytes(pkBytes)
 
 	// Try decrypting and verify if it's the same message.
 	plaintext, err := secp256k1.Decrypt(privKey, ciphertext)
@@ -147,13 +147,17 @@ func Example_decryptMessage() {
 		return
 	}
 
-	privKey, _ := secp256k1.PrivKeyFromBytes(secp256k1.S256(), pkBytes)
+	privKey, _ := secp256k1.PrivKeyFromBytes(pkBytes)
 
 	ciphertext, err := hex.DecodeString("35f644fbfb208bc71e57684c3c8b437402ca" +
 		"002047a2f1b38aa1a8f1d5121778378414f708fe13ebf7b4a7bb74407288c1958969" +
 		"00207cf4ac6057406e40f79961c973309a892732ae7a74ee96cd89823913b8b8d650" +
 		"a44166dc61ea1c419d47077b748a9c06b8d57af72deb2819d98a9d503efc59fc8307" +
 		"d14174f8b83354fac3ff56075162")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	// Try decrypting the message.
 	plaintext, err := secp256k1.Decrypt(privKey, ciphertext)

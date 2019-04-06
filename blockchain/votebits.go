@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The decred developers
+// Copyright (c) 2017-2018 The Decred developers
 // Copyright (c) 2016 The btcsuite developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
@@ -127,7 +127,7 @@ func (c deploymentChecker) Condition(node *blockNode, version uint32) ([]thresho
 			// Invalid choice.
 			continue
 		}
-		tally[idx].count += 1
+		tally[idx].count++
 	}
 
 	return tally, nil

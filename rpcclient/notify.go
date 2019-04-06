@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,12 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/decred/dcrd/dcrjson/v2"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/wire"
+	walletjson "github.com/decred/dcrwallet/rpc/jsonrpc/types"
 )
 
 var (
@@ -28,7 +28,7 @@ var (
 		"to use this feature")
 )
 
-// notificationState is used to track the current state of successfuly
+// notificationState is used to track the current state of successfully
 // registered notification so the state can be automatically re-established on
 // reconnect.
 type notificationState struct {
@@ -153,12 +153,12 @@ type NotificationHandlers struct {
 	// made to register for the notification and the function is non-nil.
 	OnTxAcceptedVerbose func(txDetails *dcrjson.TxRawResult)
 
-	// OnBtcdConnected is invoked when a wallet connects or disconnects from
+	// OnDcrdConnected is invoked when a wallet connects or disconnects from
 	// dcrd.
 	//
 	// This will only be available when client is connected to a wallet
 	// server such as dcrwallet.
-	OnBtcdConnected func(connected bool)
+	OnDcrdConnected func(connected bool)
 
 	// OnAccountBalance is invoked with account balance updates.
 	//
@@ -398,25 +398,25 @@ func (c *Client) handleNotification(ntfn *rawNotification) {
 
 		c.ntfnHandlers.OnTxAcceptedVerbose(rawTx)
 
-	// OnBtcdConnected
-	case dcrjson.BtcdConnectedNtfnMethod:
+		// OnDcrdConnected
+	case walletjson.DcrdConnectedNtfnMethod:
 		// Ignore the notification if the client is not interested in
 		// it.
-		if c.ntfnHandlers.OnBtcdConnected == nil {
+		if c.ntfnHandlers.OnDcrdConnected == nil {
 			return
 		}
 
-		connected, err := parseBtcdConnectedNtfnParams(ntfn.Params)
+		connected, err := parseDcrdConnectedNtfnParams(ntfn.Params)
 		if err != nil {
 			log.Warnf("Received invalid dcrd connected "+
 				"notification: %v", err)
 			return
 		}
 
-		c.ntfnHandlers.OnBtcdConnected(connected)
+		c.ntfnHandlers.OnDcrdConnected(connected)
 
 	// OnAccountBalance
-	case dcrjson.AccountBalanceNtfnMethod:
+	case walletjson.AccountBalanceNtfnMethod:
 		// Ignore the notification if the client is not interested in
 		// it.
 		if c.ntfnHandlers.OnAccountBalance == nil {
@@ -433,7 +433,7 @@ func (c *Client) handleNotification(ntfn *rawNotification) {
 		c.ntfnHandlers.OnAccountBalance(account, bal, conf)
 
 	// OnTicketPurchased:
-	case dcrjson.TicketPurchasedNtfnMethod:
+	case walletjson.TicketPurchasedNtfnMethod:
 		// Ignore the notification if the client is not interested in
 		// it.
 		if c.ntfnHandlers.OnTicketsPurchased == nil {
@@ -450,7 +450,7 @@ func (c *Client) handleNotification(ntfn *rawNotification) {
 		c.ntfnHandlers.OnTicketsPurchased(txHash, amount)
 
 	// OnVotesCreated:
-	case dcrjson.VoteCreatedNtfnMethod:
+	case walletjson.VoteCreatedNtfnMethod:
 		// Ignore the notification if the client is not interested in
 		// it.
 		if c.ntfnHandlers.OnVotesCreated == nil {
@@ -468,7 +468,7 @@ func (c *Client) handleNotification(ntfn *rawNotification) {
 		c.ntfnHandlers.OnVotesCreated(txHash, blockHash, height, sstxIn, voteBits)
 
 	// OnRevocationsCreated:
-	case dcrjson.RevocationCreatedNtfnMethod:
+	case walletjson.RevocationCreatedNtfnMethod:
 		// Ignore the notification if the client is not interested in
 		// it.
 		if c.ntfnHandlers.OnRevocationsCreated == nil {
@@ -485,7 +485,7 @@ func (c *Client) handleNotification(ntfn *rawNotification) {
 		c.ntfnHandlers.OnRevocationsCreated(txHash, sstxIn)
 
 	// OnWalletLockState
-	case dcrjson.WalletLockStateNtfnMethod:
+	case walletjson.WalletLockStateNtfnMethod:
 		// Ignore the notification if the client is not interested in
 		// it.
 		if c.ntfnHandlers.OnWalletLockState == nil {
@@ -860,43 +860,6 @@ func parseStakeDifficultyNtfnParams(params []json.RawMessage) (
 	return bHash, bHeight, stakeDiff, nil
 }
 
-// parseRescanProgressParams parses out the height of the last rescanned block
-// from the parameters of rescanfinished and rescanprogress notifications.
-func parseRescanProgressParams(params []json.RawMessage) (*chainhash.Hash, int32, time.Time, error) {
-	if len(params) != 3 {
-		return nil, 0, time.Time{}, wrongNumParams(len(params))
-	}
-
-	// Unmarshal first parameter as an string.
-	var hashStr string
-	err := json.Unmarshal(params[0], &hashStr)
-	if err != nil {
-		return nil, 0, time.Time{}, err
-	}
-
-	// Unmarshal second parameter as an integer.
-	var height int32
-	err = json.Unmarshal(params[1], &height)
-	if err != nil {
-		return nil, 0, time.Time{}, err
-	}
-
-	// Unmarshal third parameter as an integer.
-	var blkTime int64
-	err = json.Unmarshal(params[2], &blkTime)
-	if err != nil {
-		return nil, 0, time.Time{}, err
-	}
-
-	// Decode string encoding of block hash.
-	hash, err := chainhash.NewHashFromStr(hashStr)
-	if err != nil {
-		return nil, 0, time.Time{}, err
-	}
-
-	return hash, height, time.Unix(blkTime, 0), nil
-}
-
 // parseTxAcceptedNtfnParams parses out the transaction hash and total amount
 // from the parameters of a txaccepted notification.
 func parseTxAcceptedNtfnParams(params []json.RawMessage) (*chainhash.Hash,
@@ -957,9 +920,9 @@ func parseTxAcceptedVerboseNtfnParams(params []json.RawMessage) (*dcrjson.TxRawR
 	return &rawTx, nil
 }
 
-// parseBtcdConnectedNtfnParams parses out the connection status of dcrd
-// and dcrwallet from the parameters of a btcdconnected notification.
-func parseBtcdConnectedNtfnParams(params []json.RawMessage) (bool, error) {
+// parseDcrdConnectedNtfnParams parses out the connection status of dcrd
+// and dcrwallet from the parameters of a dcrdconnected notification.
+func parseDcrdConnectedNtfnParams(params []json.RawMessage) (bool, error) {
 	if len(params) != 1 {
 		return false, wrongNumParams(len(params))
 	}
@@ -1172,11 +1135,7 @@ type FutureNotifyBlocksResult chan *response
 // if the registration was not successful.
 func (r FutureNotifyBlocksResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // NotifyBlocksAsync returns an instance of a type that can be used to get the
@@ -1224,11 +1183,7 @@ type FutureNotifyWinningTicketsResult chan *response
 // if the registration was not successful.
 func (r FutureNotifyWinningTicketsResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // NotifyWinningTicketsAsync returns an instance of a type that can be used
@@ -1278,11 +1233,7 @@ type FutureNotifySpentAndMissedTicketsResult chan *response
 // if the registration was not successful.
 func (r FutureNotifySpentAndMissedTicketsResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // NotifySpentAndMissedTicketsAsync returns an instance of a type that can be used
@@ -1332,11 +1283,7 @@ type FutureNotifyNewTicketsResult chan *response
 // if the registration was not successful.
 func (r FutureNotifyNewTicketsResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // NotifyNewTicketsAsync returns an instance of a type that can be used to get the
@@ -1384,11 +1331,7 @@ type FutureNotifyStakeDifficultyResult chan *response
 // if the registration was not successful.
 func (r FutureNotifyStakeDifficultyResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // NotifyStakeDifficultyAsync returns an instance of a type that can be used to get the
@@ -1438,11 +1381,7 @@ type FutureNotifyNewTransactionsResult chan *response
 // if the registration was not successful.
 func (r FutureNotifyNewTransactionsResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // NotifyNewTransactionsAsync returns an instance of a type that can be used to
@@ -1523,7 +1462,7 @@ func (c *Client) LoadTxFilterAsync(reload bool, addresses []dcrutil.Address,
 
 // LoadTxFilter loads, reloads, or adds data to a websocket client's transaction
 // filter.  The filter is consistently updated based on inspected transactions
-// during mempool acceptence, block acceptence, and for all rescanned blocks.
+// during mempool acceptance, block acceptance, and for all rescanned blocks.
 //
 // NOTE: This is a dcrd extension and requires a websocket connection.
 func (c *Client) LoadTxFilter(reload bool, addresses []dcrutil.Address, outPoints []wire.OutPoint) error {

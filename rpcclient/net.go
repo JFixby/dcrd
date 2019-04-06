@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2015 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,7 +8,7 @@ package rpcclient
 import (
 	"encoding/json"
 
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/decred/dcrd/dcrjson/v2"
 )
 
 // AddNodeCommand enumerates the available commands that the AddNode function
@@ -42,11 +42,7 @@ type FutureAddNodeResult chan *response
 // any occurred when performing the specified command.
 func (r FutureAddNodeResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // AddNodeAsync returns an instance of a type that can be used to get the result
@@ -194,11 +190,7 @@ type FuturePingResult chan *response
 // of queueing a ping to be sent to each connected peer.
 func (r FuturePingResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // PingAsync returns an instance of a type that can be used to get the result of

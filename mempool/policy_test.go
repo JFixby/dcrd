@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2016-2017 The Decred developers
+// Copyright (c) 2016-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -13,8 +13,9 @@ import (
 
 	"github.com/decred/dcrd/blockchain/stake"
 	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainec"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/dcrec"
+	"github.com/decred/dcrd/dcrec/secp256k1"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
@@ -40,13 +41,13 @@ func TestCalcMinRequiredTxRelayFee(t *testing.T) {
 			"1000 bytes with default minimum relay fee",
 			1000,
 			DefaultMinRelayTxFee,
-			1e5,
+			1e4,
 		},
 		{
 			"max standard tx size with default minimum relay fee",
 			maxStandardTxSize,
 			DefaultMinRelayTxFee,
-			1e7,
+			1e6,
 		},
 		{
 			"max standard tx size with max relay fee",
@@ -101,8 +102,8 @@ func TestCalcMinRequiredTxRelayFee(t *testing.T) {
 func TestCheckPkScriptStandard(t *testing.T) {
 	var pubKeys [][]byte
 	for i := 0; i < 4; i++ {
-		pk := chainec.Secp256k1.NewPrivateKey(big.NewInt(int64(chainec.ECTypeSecp256k1)))
-		pubKeys = append(pubKeys, chainec.Secp256k1.NewPublicKey(pk.Public()).SerializeCompressed())
+		pk := secp256k1.NewPrivateKey(big.NewInt(0))
+		pubKeys = append(pubKeys, (*secp256k1.PublicKey)(&pk.PublicKey).SerializeCompressed())
 	}
 
 	tests := []struct {
@@ -253,6 +254,18 @@ func TestDust(t *testing.T) {
 			false,
 		},
 		{
+			"25 byte public key script with value 6029, relay fee 1e4",
+			wire.TxOut{Value: 6029, Version: 0, PkScript: pkScript},
+			1e4,
+			true,
+		},
+		{
+			"25 byte public key script with value 6030, relay fee 1e4",
+			wire.TxOut{Value: 6030, Version: 0, PkScript: pkScript},
+			1e4,
+			false,
+		},
+		{
 			// Maximum allowed value is never dust.
 			"max amount is never dust",
 			wire.TxOut{Value: dcrutil.MaxAmount, Version: 0, PkScript: pkScript},
@@ -308,7 +321,7 @@ func TestCheckTransactionStandard(t *testing.T) {
 	}
 	addrHash := [20]byte{0x01}
 	addr, err := dcrutil.NewAddressPubKeyHash(addrHash[:],
-		&chaincfg.TestNet2Params, chainec.ECTypeSecp256k1)
+		&chaincfg.RegNetParams, dcrec.STEcdsaSecp256k1)
 	if err != nil {
 		t.Fatalf("NewAddressPubKeyHash: unexpected error: %v", err)
 	}

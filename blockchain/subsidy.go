@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2015 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -120,8 +120,7 @@ func (s *SubsidyCache) CalcBlockSubsidy(height int64) int64 {
 
 // CalcBlockWorkSubsidy calculates the proof of work subsidy for a block as a
 // proportion of the total subsidy.
-func CalcBlockWorkSubsidy(subsidyCache *SubsidyCache, height int64,
-	voters uint16, params *chaincfg.Params) int64 {
+func CalcBlockWorkSubsidy(subsidyCache *SubsidyCache, height int64, voters uint16, params *chaincfg.Params) int64 {
 	subsidy := subsidyCache.CalcBlockSubsidy(height)
 
 	proportionWork := int64(params.WorkRewardProportion)
@@ -152,8 +151,7 @@ func CalcBlockWorkSubsidy(subsidyCache *SubsidyCache, height int64,
 // of its input SStx.
 //
 // Safe for concurrent access.
-func CalcStakeVoteSubsidy(subsidyCache *SubsidyCache, height int64,
-	params *chaincfg.Params) int64 {
+func CalcStakeVoteSubsidy(subsidyCache *SubsidyCache, height int64, params *chaincfg.Params) int64 {
 	// Calculate the actual reward for this block, then further reduce reward
 	// proportional to StakeRewardProportion.
 	// Note that voters/potential voters is 1, so that vote reward is calculated
@@ -172,8 +170,7 @@ func CalcStakeVoteSubsidy(subsidyCache *SubsidyCache, height int64,
 // coinbase.
 //
 // Safe for concurrent access.
-func CalcBlockTaxSubsidy(subsidyCache *SubsidyCache, height int64, voters uint16,
-	params *chaincfg.Params) int64 {
+func CalcBlockTaxSubsidy(subsidyCache *SubsidyCache, height int64, voters uint16, params *chaincfg.Params) int64 {
 	if params.BlockTaxProportion == 0 {
 		return 0
 	}
@@ -205,8 +202,7 @@ func CalcBlockTaxSubsidy(subsidyCache *SubsidyCache, height int64, voters uint16
 
 // BlockOneCoinbasePaysTokens checks to see if the first block coinbase pays
 // out to the network initial token ledger.
-func BlockOneCoinbasePaysTokens(tx *dcrutil.Tx,
-	params *chaincfg.Params) error {
+func BlockOneCoinbasePaysTokens(tx *dcrutil.Tx, params *chaincfg.Params) error {
 	// If no ledger is specified, just return true.
 	if len(params.BlockOneLedger) == 0 {
 		return nil
@@ -286,8 +282,7 @@ func BlockOneCoinbasePaysTokens(tx *dcrutil.Tx,
 
 // CoinbasePaysTax checks to see if a given block's coinbase correctly pays
 // tax to the developer organization.
-func CoinbasePaysTax(subsidyCache *SubsidyCache, tx *dcrutil.Tx, height uint32,
-	voters uint16, params *chaincfg.Params) error {
+func CoinbasePaysTax(subsidyCache *SubsidyCache, tx *dcrutil.Tx, height int64, voters uint16, params *chaincfg.Params) error {
 	// Taxes only apply from block 2 onwards.
 	if height <= 1 {
 		return nil
@@ -316,7 +311,7 @@ func CoinbasePaysTax(subsidyCache *SubsidyCache, tx *dcrutil.Tx, height uint32,
 
 	// Get the amount of subsidy that should have been paid out to
 	// the organization, then check it.
-	orgSubsidy := CalcBlockTaxSubsidy(subsidyCache, int64(height), voters, params)
+	orgSubsidy := CalcBlockTaxSubsidy(subsidyCache, height, voters, params)
 	if orgSubsidy != taxOutput.Value {
 		errStr := fmt.Sprintf("amount in output 0 has non matching org "+
 			"calculated amount; got %v, want %v", taxOutput.Value,
@@ -333,15 +328,12 @@ func CoinbasePaysTax(subsidyCache *SubsidyCache, tx *dcrutil.Tx, height uint32,
 // network, or the function might panic.
 func CalculateAddedSubsidy(block, parent *dcrutil.Block) int64 {
 	var subsidy int64
-
-	regularTxTreeValid := dcrutil.IsFlagSet16(block.MsgBlock().Header.VoteBits,
-		dcrutil.BlockValid)
-	if regularTxTreeValid {
+	if headerApprovesParent(&block.MsgBlock().Header) {
 		subsidy += parent.MsgBlock().Transactions[0].TxIn[0].ValueIn
 	}
 
 	for _, stx := range block.MsgBlock().STransactions {
-		if isSSGen, _ := stake.IsSSGen(stx); isSSGen {
+		if stake.IsSSGen(stx) {
 			subsidy += stx.TxIn[0].ValueIn
 		}
 	}

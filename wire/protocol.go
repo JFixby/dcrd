@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -17,11 +17,11 @@ const (
 	InitialProcotolVersion uint32 = 1
 
 	// ProtocolVersion is the latest protocol version this package supports.
-	ProtocolVersion uint32 = 5
+	ProtocolVersion uint32 = 6
 
-	// BIP0111Version is the protocol version which added the SFNodeBloom
-	// service flag.
-	BIP0111Version uint32 = 2
+	// NodeBloomVersion is the protocol version which added the SFNodeBloom
+	// service flag (unused).
+	NodeBloomVersion uint32 = 2
 
 	// SendHeadersVersion is the protocol version which added a new
 	// sendheaders message.
@@ -34,9 +34,14 @@ const (
 	// FeeFilterVersion is the protocol version which added a new
 	// feefilter message.
 	FeeFilterVersion uint32 = 5
+
+	// NodeCFVersion is the protocol version which adds the SFNodeCF service
+	// flag and the cfheaders, cfilter, cftypes, getcfheaders, getcfilter and
+	// getcftypes messages.
+	NodeCFVersion uint32 = 6
 )
 
-// ServiceFlag identifies services supported by a decred peer.
+// ServiceFlag identifies services supported by a Decred peer.
 type ServiceFlag uint64
 
 const (
@@ -46,12 +51,17 @@ const (
 	// SFNodeBloom is a flag used to indiciate a peer supports bloom
 	// filtering.
 	SFNodeBloom
+
+	// SFNodeCF is a flag used to indicate a peer supports committed
+	// filters (CFs).
+	SFNodeCF
 )
 
 // Map of service flags back to their constant names for pretty printing.
 var sfStrings = map[ServiceFlag]string{
 	SFNodeNetwork: "SFNodeNetwork",
 	SFNodeBloom:   "SFNodeBloom",
+	SFNodeCF:      "SFNodeCF",
 }
 
 // orderedSFStrings is an ordered list of service flags from highest to
@@ -59,6 +69,7 @@ var sfStrings = map[ServiceFlag]string{
 var orderedSFStrings = []ServiceFlag{
 	SFNodeNetwork,
 	SFNodeBloom,
+	SFNodeCF,
 }
 
 // String returns the ServiceFlag in human-readable form.
@@ -86,33 +97,39 @@ func (f ServiceFlag) String() string {
 	return s
 }
 
-// CurrencyNet represents which decred network a message belongs to.
+// CurrencyNet represents which Decred network a message belongs to.
 type CurrencyNet uint32
 
-// Constants used to indicate the message decred network.  They can also be
+// Constants used to indicate the message Decred network.  They can also be
 // used to seek to the next message when a stream's state is unknown, but
 // this package does not provide that functionality since it's generally a
 // better idea to simply disconnect clients that are misbehaving over TCP.
 const (
-	// MainNet represents the main decred network.
+	// MainNet represents the main Decred network.
 	MainNet CurrencyNet = 0xd9b400f9
 
-	// RegTest represents the regression test network.
-	RegTest CurrencyNet = 0xdab500fa
+	// RegNet represents the regression test network.
+	RegNet CurrencyNet = 0xdab500fa
 
-	// TestNet2 represents the 2nd test network.
-	TestNet2 CurrencyNet = 0x48e7a065
+	// RegTest represents the regression test network.
+	//
+	// DEPRECATED.  This will be removed in the next major version bump.
+	// Use Regnet instead.
+	RegTest CurrencyNet = RegNet
+
+	// TestNet3 represents the 3rd test network.
+	TestNet3 CurrencyNet = 0xb194aa75
 
 	// SimNet represents the simulation test network.
 	SimNet CurrencyNet = 0x12141c16
 )
 
-// bnStrings is a map of decred networks back to their constant names for
+// bnStrings is a map of Decred networks back to their constant names for
 // pretty printing.
 var bnStrings = map[CurrencyNet]string{
 	MainNet:  "MainNet",
-	TestNet2: "TestNet2",
-	RegTest:  "RegNet",
+	TestNet3: "TestNet3",
+	RegNet:   "RegNet",
 	SimNet:   "SimNet",
 }
 

@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -25,10 +25,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/decred/dcrd/dcrjson"
-
 	"github.com/btcsuite/go-socks/socks"
-	"github.com/btcsuite/websocket"
+	"github.com/gorilla/websocket"
+
+	"github.com/decred/dcrd/dcrjson/v2"
 )
 
 var (
@@ -159,6 +159,25 @@ type Client struct {
 	disconnect      chan struct{}
 	shutdown        chan struct{}
 	wg              sync.WaitGroup
+}
+
+// String implements fmt.Stringer by returning the URL of the RPC server the
+// client makes requests to.
+func (c *Client) String() string {
+	var u url.URL
+	switch {
+	case c.config.HTTPPostMode && c.config.DisableTLS:
+		u.Scheme = "http"
+	case c.config.HTTPPostMode:
+		u.Scheme = "https"
+	case c.config.DisableTLS:
+		u.Scheme = "ws"
+	default:
+		u.Scheme = "wss"
+	}
+	u.Host = c.config.Host
+	u.Path = c.config.Endpoint
+	return u.String()
 }
 
 // NextID returns the next id to be used when sending a JSON-RPC message.  This
@@ -298,6 +317,13 @@ type response struct {
 	err    error
 }
 
+// futureError returns a buffered response channel containing the error.
+func futureError(err error) chan *response {
+	c := make(chan *response, 1)
+	c <- &response{err: err}
+	return c
+}
+
 // result checks whether the unmarshaled response contains a non-nil error,
 // returning an unmarshaled dcrjson.RPCError (or an unmarshaling error) if so.
 // If the response is not an error, the raw bytes of the request are
@@ -314,6 +340,8 @@ func (c *Client) handleMessage(msg []byte) {
 	// Attempt to unmarshal the message as either a notification or
 	// response.
 	var in inMessage
+	in.rawResponse = &rawResponse{}
+	in.rawNotification = &rawNotification{}
 	err := json.Unmarshal(msg, &in)
 	if err != nil {
 		log.Warnf("Remote server sent invalid message: %v", err)
@@ -879,7 +907,7 @@ func (c *Client) sendCmd(cmd interface{}) chan *response {
 
 	// Marshal the command.
 	id := c.NextID()
-	marshalledJSON, err := dcrjson.MarshalCmd(id, cmd)
+	marshalledJSON, err := dcrjson.MarshalCmd("1.0", id, cmd)
 	if err != nil {
 		return newFutureError(err)
 	}

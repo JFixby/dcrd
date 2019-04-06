@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -23,8 +23,8 @@ import (
 func makeHeader(dcrnet CurrencyNet, command string,
 	payloadLen uint32, checksum uint32) []byte {
 
-	// The length of a decred message header is 24 bytes.
-	// 4 byte magic number of the decred network + 12 byte command + 4 byte
+	// The length of a Decred message header is 24 bytes.
+	// 4 byte magic number of the Decred network + 12 byte command + 4 byte
 	// payload length + 4 byte checksum.
 	buf := make([]byte, 24)
 	binary.LittleEndian.PutUint32(buf, uint32(dcrnet))
@@ -68,31 +68,14 @@ func TestMessage(t *testing.T) {
 	msgPong := NewMsgPong(123123)
 	msgGetHeaders := NewMsgGetHeaders()
 	msgHeaders := NewMsgHeaders()
-	msgAlert := NewMsgAlert([]byte("payload"), []byte("signature"))
 	msgMemPool := NewMsgMemPool()
-	msgFilterAdd := NewMsgFilterAdd([]byte{0x01})
-	msgFilterClear := NewMsgFilterClear()
-	msgFilterLoad := NewMsgFilterLoad([]byte{0x01}, 10, 0, BloomUpdateNone)
-	bh := NewBlockHeader(
-		int32(0),                                    // Version
-		&chainhash.Hash{},                           // PrevHash
-		&chainhash.Hash{},                           // MerkleRoot
-		&chainhash.Hash{},                           // StakeRoot
-		uint16(0x0000),                              // VoteBits
-		[6]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // FinalState
-		uint16(0x0000),                              // Voters
-		uint8(0x00),                                 // FreshStake
-		uint8(0x00),                                 // Revocations
-		uint32(0),                                   // Poolsize
-		uint32(0x00000000),                          // Bits
-		int64(0x0000000000000000),                   // Sbits
-		uint32(0),                                   // Height
-		uint32(0),                                   // Size
-		uint32(0x00000000),                          // Nonce
-		[32]byte{},                                  // ExtraData
-		uint32(0xcab005e0),                          // StakeVersion
-	)
-	msgMerkleBlock := NewMsgMerkleBlock(bh)
+	msgGetCFilter := NewMsgGetCFilter(&chainhash.Hash{}, GCSFilterExtended)
+	msgGetCFHeaders := NewMsgGetCFHeaders()
+	msgGetCFTypes := NewMsgGetCFTypes()
+	msgCFilter := NewMsgCFilter(&chainhash.Hash{}, GCSFilterExtended,
+		[]byte("payload"))
+	msgCFHeaders := NewMsgCFHeaders()
+	msgCFTypes := NewMsgCFTypes([]FilterType{GCSFilterExtended})
 	msgReject := NewMsgReject("block", RejectDuplicate, "duplicate block")
 
 	tests := []struct {
@@ -102,27 +85,28 @@ func TestMessage(t *testing.T) {
 		dcrnet CurrencyNet // Network to use for wire encoding
 		bytes  int         // Expected num bytes read/written
 	}{
-		{msgVersion, msgVersion, pver, MainNet, 125},         // [0]
-		{msgVerack, msgVerack, pver, MainNet, 24},            // [1]
-		{msgGetAddr, msgGetAddr, pver, MainNet, 24},          // [2]
-		{msgAddr, msgAddr, pver, MainNet, 25},                // [3]
-		{msgGetBlocks, msgGetBlocks, pver, MainNet, 61},      // [4]
-		{msgBlock, msgBlock, pver, MainNet, 522},             // [5]
-		{msgInv, msgInv, pver, MainNet, 25},                  // [6]
-		{msgGetData, msgGetData, pver, MainNet, 25},          // [7]
-		{msgNotFound, msgNotFound, pver, MainNet, 25},        // [8]
-		{msgTx, msgTx, pver, MainNet, 39},                    // [9]
-		{msgPing, msgPing, pver, MainNet, 32},                // [10]
-		{msgPong, msgPong, pver, MainNet, 32},                // [11]
-		{msgGetHeaders, msgGetHeaders, pver, MainNet, 61},    // [12]
-		{msgHeaders, msgHeaders, pver, MainNet, 25},          // [13]
-		{msgAlert, msgAlert, pver, MainNet, 42},              // [14]
-		{msgMemPool, msgMemPool, pver, MainNet, 24},          // [15]
-		{msgFilterAdd, msgFilterAdd, pver, MainNet, 26},      // [16]
-		{msgFilterClear, msgFilterClear, pver, MainNet, 24},  // [17]
-		{msgFilterLoad, msgFilterLoad, pver, MainNet, 35},    // [18]
-		{msgMerkleBlock, msgMerkleBlock, pver, MainNet, 215}, // [19]
-		{msgReject, msgReject, pver, MainNet, 79},            // [20]
+		{msgVersion, msgVersion, pver, MainNet, 125},          // [0]
+		{msgVerack, msgVerack, pver, MainNet, 24},             // [1]
+		{msgGetAddr, msgGetAddr, pver, MainNet, 24},           // [2]
+		{msgAddr, msgAddr, pver, MainNet, 25},                 // [3]
+		{msgGetBlocks, msgGetBlocks, pver, MainNet, 61},       // [4]
+		{msgBlock, msgBlock, pver, MainNet, 522},              // [5]
+		{msgInv, msgInv, pver, MainNet, 25},                   // [6]
+		{msgGetData, msgGetData, pver, MainNet, 25},           // [7]
+		{msgNotFound, msgNotFound, pver, MainNet, 25},         // [8]
+		{msgTx, msgTx, pver, MainNet, 39},                     // [9]
+		{msgPing, msgPing, pver, MainNet, 32},                 // [10]
+		{msgPong, msgPong, pver, MainNet, 32},                 // [11]
+		{msgGetHeaders, msgGetHeaders, pver, MainNet, 61},     // [12]
+		{msgHeaders, msgHeaders, pver, MainNet, 25},           // [13]
+		{msgMemPool, msgMemPool, pver, MainNet, 24},           // [15]
+		{msgReject, msgReject, pver, MainNet, 79},             // [20]
+		{msgGetCFilter, msgGetCFilter, pver, MainNet, 57},     // [21]
+		{msgGetCFHeaders, msgGetCFHeaders, pver, MainNet, 58}, // [22]
+		{msgGetCFTypes, msgGetCFTypes, pver, MainNet, 24},     // [23]
+		{msgCFilter, msgCFilter, pver, MainNet, 65},           // [24]
+		{msgCFHeaders, msgCFHeaders, pver, MainNet, 58},       // [25]
+		{msgCFTypes, msgCFTypes, pver, MainNet, 26},           // [26]
 	}
 
 	t.Logf("Running %d tests", len(tests))
@@ -213,7 +197,7 @@ func TestReadMessageWireErrors(t *testing.T) {
 	}
 
 	// Wire encoded bytes for main and testnet networks magic identifiers.
-	testNet2Bytes := makeHeader(TestNet2, "", 0, 0)
+	testNetBytes := makeHeader(TestNet3, "", 0, 0)
 
 	// Wire encoded bytes for a message that exceeds max overall message
 	// length.
@@ -271,12 +255,12 @@ func TestReadMessageWireErrors(t *testing.T) {
 			0,
 		},
 
-		// Wrong network.  Want MainNet, but giving TestNet2. [1]
+		// Wrong network.  Want MainNet, but giving TestNet. [1]
 		{
-			testNet2Bytes,
+			testNetBytes,
 			pver,
 			dcrnet,
-			len(testNet2Bytes),
+			len(testNetBytes),
 			&MessageError{},
 			24,
 		},

@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Decred developers
+// Copyright (c) 2017-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -34,15 +34,15 @@ func TestCalcSequenceLock(t *testing.T) {
 	// Generate a synthetic simnet chain with enough nodes to properly test
 	// the sequence lock functionality.
 	numBlocks := uint32(20)
-	params := &chaincfg.SimNetParams
+	params := &chaincfg.RegNetParams
 	bc := newFakeChain(params)
-	node := bc.bestNode
-	blockTime := node.header.Timestamp
+	node := bc.bestChain.Tip()
+	blockTime := time.Unix(node.timestamp, 0)
 	for i := uint32(0); i < numBlocks; i++ {
 		blockTime = blockTime.Add(time.Second)
 		node = newFakeNode(node, 1, 1, 0, blockTime)
-		bc.index[node.hash] = node
-		bc.bestNode = node
+		bc.index.AddNode(node)
+		bc.bestChain.SetTip(node)
 	}
 
 	// Create a utxo view with a fake utxo for the inputs used in the
@@ -74,25 +74,13 @@ func TestCalcSequenceLock(t *testing.T) {
 	// Obtain the median time past from the PoV of the input created above.
 	// The median time for the input is the median time from the PoV of the
 	// block *prior* to the one that included it.
-	medianNode, err := bc.ancestorNode(node, node.height-5)
-	if err != nil {
-		t.Fatalf("Unable to obtain median node: %v", err)
-	}
-	medianT, err := bc.calcPastMedianTime(medianNode)
-	if err != nil {
-		t.Fatalf("Unable to obtain median node time: %v", err)
-	}
-	medianTime := medianT.Unix()
+	medianTime := node.RelativeAncestor(5).CalcPastMedianTime().Unix()
 
 	// The median time calculated from the PoV of the best block in the
 	// test chain.  For unconfirmed inputs, this value will be used since
 	// the median time will be calculated from the PoV of the
 	// yet-to-be-mined block.
-	nextMedianT, err := bc.calcPastMedianTime(node)
-	if err != nil {
-		t.Fatalf("Unable to obtain next median node time: %v", err)
-	}
-	nextMedianTime := nextMedianT.Unix()
+	nextMedianTime := node.CalcPastMedianTime().Unix()
 	nextBlockHeight := int64(numBlocks) + 1
 
 	// Add an additional transaction which will serve as our unconfirmed

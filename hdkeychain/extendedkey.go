@@ -21,8 +21,9 @@ import (
 
 	"github.com/decred/base58"
 	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainec"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/dcrec"
+	"github.com/decred/dcrd/dcrec/secp256k1"
 	"github.com/decred/dcrd/dcrutil"
 )
 
@@ -102,10 +103,10 @@ type ExtendedKey struct {
 	key       []byte // This will be the pubkey for extended pub keys
 	pubKey    []byte // This will only be set for extended priv keys
 	chainCode []byte
-	depth     uint16
 	parentFP  []byte
-	childNum  uint32
 	version   []byte
+	childNum  uint32
+	depth     uint16
 	isPrivate bool
 }
 
@@ -145,8 +146,8 @@ func (k *ExtendedKey) pubKeyBytes() []byte {
 	// This is a private extended key, so calculate and memoize the public
 	// key if needed.
 	if len(k.pubKey) == 0 {
-		pkx, pky := chainec.Secp256k1.ScalarBaseMult(k.key)
-		pubKey := chainec.Secp256k1.NewPublicKey(pkx, pky)
+		pkx, pky := secp256k1.S256().ScalarBaseMult(k.key)
+		pubKey := secp256k1.PublicKey{Curve: secp256k1.S256(), X: pkx, Y: pky}
 		k.pubKey = pubKey.SerializeCompressed()
 	}
 
@@ -248,8 +249,9 @@ func (k *ExtendedKey) Child(i uint32) (*ExtendedKey, error) {
 	// chance (< 1 in 2^127) this condition will not hold, and in that case,
 	// a child extended key can't be created for this index and the caller
 	// should simply increment to the next index.
+	curve := secp256k1.S256()
 	ilNum := new(big.Int).SetBytes(il)
-	if ilNum.Cmp(chainec.Secp256k1.GetN()) >= 0 || ilNum.Sign() == 0 {
+	if ilNum.Cmp(curve.N) >= 0 || ilNum.Sign() == 0 {
 		return nil, ErrInvalidChild
 	}
 
@@ -271,14 +273,14 @@ func (k *ExtendedKey) Child(i uint32) (*ExtendedKey, error) {
 		// childKey = parse256(Il) + parenKey
 		keyNum := new(big.Int).SetBytes(k.key)
 		ilNum.Add(ilNum, keyNum)
-		ilNum.Mod(ilNum, chainec.Secp256k1.GetN())
+		ilNum.Mod(ilNum, curve.N)
 		childKey = ilNum.Bytes()
 		isPrivate = true
 	} else {
 		// Case #3.
 		// Calculate the corresponding intermediate public key for
 		// intermediate private key.
-		ilx, ily := chainec.Secp256k1.ScalarBaseMult(il)
+		ilx, ily := curve.ScalarBaseMult(il)
 		if ilx.Sign() == 0 || ily.Sign() == 0 {
 			return nil, ErrInvalidChild
 		}
@@ -286,7 +288,7 @@ func (k *ExtendedKey) Child(i uint32) (*ExtendedKey, error) {
 		// Convert the serialized compressed parent public key into X
 		// and Y coordinates so it can be added to the intermediate
 		// public key.
-		pubKey, err := chainec.Secp256k1.ParsePubKey(k.key)
+		pubKey, err := secp256k1.ParsePubKey(k.key)
 		if err != nil {
 			return nil, err
 		}
@@ -295,14 +297,13 @@ func (k *ExtendedKey) Child(i uint32) (*ExtendedKey, error) {
 		// derive the final child key.
 		//
 		// childKey = serP(point(parse256(Il)) + parentKey)
-		childX, childY := chainec.Secp256k1.Add(ilx, ily, pubKey.GetX(),
-			pubKey.GetY())
-		pk := chainec.Secp256k1.NewPublicKey(childX, childY)
+		childX, childY := curve.Add(ilx, ily, pubKey.X, pubKey.Y)
+		pk := secp256k1.PublicKey{Curve: secp256k1.S256(), X: childX, Y: childY}
 		childKey = pk.SerializeCompressed()
 	}
 
 	// The fingerprint of the parent for the derived child is the first 4
-	// bytes of the RIPEMD160(SHA256(parentPubKey)).
+	// bytes of the RIPEMD160(BLAKE256(parentPubKey)).
 	parentFP := dcrutil.Hash160(k.pubKeyBytes())[:4]
 	return newExtendedKey(k.version, childKey, childChainCode, parentFP,
 		k.depth+1, i, isPrivate), nil
@@ -337,28 +338,28 @@ func (k *ExtendedKey) Neuter() (*ExtendedKey, error) {
 }
 
 // ECPubKey converts the extended key to a dcrec public key and returns it.
-func (k *ExtendedKey) ECPubKey() (chainec.PublicKey, error) {
-	return chainec.Secp256k1.ParsePubKey(k.pubKeyBytes())
+func (k *ExtendedKey) ECPubKey() (*secp256k1.PublicKey, error) {
+	return secp256k1.ParsePubKey(k.pubKeyBytes())
 }
 
 // ECPrivKey converts the extended key to a dcrec private key and returns it.
 // As you might imagine this is only possible if the extended key is a private
 // extended key (as determined by the IsPrivate function).  The ErrNotPrivExtKey
 // error will be returned if this function is called on a public extended key.
-func (k *ExtendedKey) ECPrivKey() (chainec.PrivateKey, error) {
+func (k *ExtendedKey) ECPrivKey() (*secp256k1.PrivateKey, error) {
 	if !k.isPrivate {
 		return nil, ErrNotPrivExtKey
 	}
 
-	privKey, _ := chainec.Secp256k1.PrivKeyFromBytes(k.key)
+	privKey, _ := secp256k1.PrivKeyFromBytes(k.key)
 	return privKey, nil
 }
 
-// Address converts the extended key to a standard decred pay-to-pubkey-hash
+// Address converts the extended key to a standard Decred pay-to-pubkey-hash
 // address for the passed network.
 func (k *ExtendedKey) Address(net *chaincfg.Params) (*dcrutil.AddressPubKeyHash, error) {
 	pkHash := dcrutil.Hash160(k.pubKeyBytes())
-	return dcrutil.NewAddressPubKeyHash(pkHash, net, chainec.ECTypeSecp256k1)
+	return dcrutil.NewAddressPubKeyHash(pkHash, net, dcrec.STEcdsaSecp256k1)
 }
 
 // paddedAppend appends the src byte slice to dst, returning the new slice.
@@ -372,9 +373,9 @@ func paddedAppend(size uint, dst, src []byte) []byte {
 }
 
 // String returns the extended key as a human-readable base58-encoded string.
-func (k *ExtendedKey) String() (string, error) {
+func (k *ExtendedKey) String() string {
 	if len(k.key) == 0 {
-		return "", fmt.Errorf("zeroed extended key")
+		return "zeroed extended key"
 	}
 
 	var childNumBytes [4]byte
@@ -399,11 +400,11 @@ func (k *ExtendedKey) String() (string, error) {
 
 	checkSum := chainhash.HashB(chainhash.HashB(serializedBytes))[:4]
 	serializedBytes = append(serializedBytes, checkSum...)
-	return base58.Encode(serializedBytes), nil
+	return base58.Encode(serializedBytes)
 }
 
 // IsForNet returns whether or not the extended key is associated with the
-// passed decred network.
+// passed Decred network.
 func (k *ExtendedKey) IsForNet(net *chaincfg.Params) bool {
 	return bytes.Equal(k.version, net.HDPrivateKeyID[:]) ||
 		bytes.Equal(k.version, net.HDPublicKeyID[:])
@@ -472,7 +473,7 @@ func NewMaster(seed []byte, net *chaincfg.Params) (*ExtendedKey, error) {
 
 	// Ensure the key in usable.
 	secretKeyNum := new(big.Int).SetBytes(secretKey)
-	if secretKeyNum.Cmp(chainec.Secp256k1.GetN()) >= 0 ||
+	if secretKeyNum.Cmp(secp256k1.S256().N) >= 0 ||
 		secretKeyNum.Sign() == 0 {
 		return nil, ErrUnusableSeed
 	}
@@ -520,13 +521,13 @@ func NewKeyFromString(key string) (*ExtendedKey, error) {
 		// of the order of the secp256k1 curve and not be 0.
 		keyData = keyData[1:]
 		keyNum := new(big.Int).SetBytes(keyData)
-		if keyNum.Cmp(chainec.Secp256k1.GetN()) >= 0 || keyNum.Sign() == 0 {
+		if keyNum.Cmp(secp256k1.S256().N) >= 0 || keyNum.Sign() == 0 {
 			return nil, ErrUnusableSeed
 		}
 	} else {
 		// Ensure the public key parses correctly and is actually on the
 		// secp256k1 curve.
-		_, err := chainec.Secp256k1.ParsePubKey(keyData)
+		_, err := secp256k1.ParsePubKey(keyData)
 		if err != nil {
 			return nil, err
 		}

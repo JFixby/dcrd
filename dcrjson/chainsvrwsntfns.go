@@ -1,5 +1,5 @@
 // Copyright (c) 2014 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -16,6 +16,9 @@ const (
 	// BlockDisconnectedNtfnMethod is the method used for notifications from
 	// the chain server that a block has been disconnected.
 	BlockDisconnectedNtfnMethod = "blockdisconnected"
+
+	// NewTicketsNtfnMethod is the method of the daemon newtickets notification.
+	NewTicketsNtfnMethod = "newtickets"
 
 	// ReorganizationNtfnMethod is the method used for notifications that the
 	// block chain is in the process of a reorganization.
@@ -35,6 +38,18 @@ const (
 	// from the chain server that inform a client that a relevant
 	// transaction was accepted by the mempool.
 	RelevantTxAcceptedNtfnMethod = "relevanttxaccepted"
+
+	// SpentAndMissedTicketsNtfnMethod is the method of the daemon
+	// spentandmissedtickets notification.
+	SpentAndMissedTicketsNtfnMethod = "spentandmissedtickets"
+
+	// StakeDifficultyNtfnMethod is the method of the daemon stakedifficulty
+	// notification.
+	StakeDifficultyNtfnMethod = "stakedifficulty"
+
+	// WinningTicketsNtfnMethod is the method of the daemon winningtickets
+	// notification.
+	WinningTicketsNtfnMethod = "winningtickets"
 )
 
 // BlockConnectedNtfn defines the blockconnected JSON-RPC notification.
@@ -65,6 +80,25 @@ func NewBlockDisconnectedNtfn(header string) *BlockDisconnectedNtfn {
 	}
 }
 
+// NewTicketsNtfn is a type handling custom marshaling and
+// unmarshaling of newtickets JSON websocket notifications.
+type NewTicketsNtfn struct {
+	Hash      string
+	Height    int32
+	StakeDiff int64
+	Tickets   []string
+}
+
+// NewNewTicketsNtfn creates a new NewTicketsNtfn.
+func NewNewTicketsNtfn(hash string, height int32, stakeDiff int64, tickets []string) *NewTicketsNtfn {
+	return &NewTicketsNtfn{
+		Hash:      hash,
+		Height:    height,
+		StakeDiff: stakeDiff,
+		Tickets:   tickets,
+	}
+}
+
 // ReorganizationNtfn defines the reorganization JSON-RPC notification.
 type ReorganizationNtfn struct {
 	OldHash   string `json:"oldhash"`
@@ -82,6 +116,42 @@ func NewReorganizationNtfn(oldHash string, oldHeight int32, newHash string,
 		OldHeight: oldHeight,
 		NewHash:   newHash,
 		NewHeight: newHeight,
+	}
+}
+
+// SpentAndMissedTicketsNtfn is a type handling custom marshaling and
+// unmarshaling of spentandmissedtickets JSON websocket notifications.
+type SpentAndMissedTicketsNtfn struct {
+	Hash      string
+	Height    int32
+	StakeDiff int64
+	Tickets   map[string]string
+}
+
+// NewSpentAndMissedTicketsNtfn creates a new SpentAndMissedTicketsNtfn.
+func NewSpentAndMissedTicketsNtfn(hash string, height int32, stakeDiff int64, tickets map[string]string) *SpentAndMissedTicketsNtfn {
+	return &SpentAndMissedTicketsNtfn{
+		Hash:      hash,
+		Height:    height,
+		StakeDiff: stakeDiff,
+		Tickets:   tickets,
+	}
+}
+
+// StakeDifficultyNtfn is a type handling custom marshaling and
+// unmarshaling of stakedifficulty JSON websocket notifications.
+type StakeDifficultyNtfn struct {
+	BlockHash   string
+	BlockHeight int32
+	StakeDiff   int64
+}
+
+// NewStakeDifficultyNtfn creates a new StakeDifficultyNtfn.
+func NewStakeDifficultyNtfn(hash string, height int32, stakeDiff int64) *StakeDifficultyNtfn {
+	return &StakeDifficultyNtfn{
+		BlockHash:   hash,
+		BlockHeight: height,
+		StakeDiff:   stakeDiff,
 	}
 }
 
@@ -125,6 +195,23 @@ func NewRelevantTxAcceptedNtfn(txHex string) *RelevantTxAcceptedNtfn {
 	return &RelevantTxAcceptedNtfn{Transaction: txHex}
 }
 
+// WinningTicketsNtfn is a type handling custom marshaling and
+// unmarshaling of blockconnected JSON websocket notifications.
+type WinningTicketsNtfn struct {
+	BlockHash   string
+	BlockHeight int32
+	Tickets     map[string]string
+}
+
+// NewWinningTicketsNtfn creates a new WinningTicketsNtfn.
+func NewWinningTicketsNtfn(hash string, height int32, tickets map[string]string) *WinningTicketsNtfn {
+	return &WinningTicketsNtfn{
+		BlockHash:   hash,
+		BlockHeight: height,
+		Tickets:     tickets,
+	}
+}
+
 func init() {
 	// The commands in this file are only usable by websockets and are
 	// notifications.
@@ -132,8 +219,12 @@ func init() {
 
 	MustRegisterCmd(BlockConnectedNtfnMethod, (*BlockConnectedNtfn)(nil), flags)
 	MustRegisterCmd(BlockDisconnectedNtfnMethod, (*BlockDisconnectedNtfn)(nil), flags)
+	MustRegisterCmd(NewTicketsNtfnMethod, (*NewTicketsNtfn)(nil), flags)
 	MustRegisterCmd(ReorganizationNtfnMethod, (*ReorganizationNtfn)(nil), flags)
 	MustRegisterCmd(TxAcceptedNtfnMethod, (*TxAcceptedNtfn)(nil), flags)
 	MustRegisterCmd(TxAcceptedVerboseNtfnMethod, (*TxAcceptedVerboseNtfn)(nil), flags)
 	MustRegisterCmd(RelevantTxAcceptedNtfnMethod, (*RelevantTxAcceptedNtfn)(nil), flags)
+	MustRegisterCmd(SpentAndMissedTicketsNtfnMethod, (*SpentAndMissedTicketsNtfn)(nil), flags)
+	MustRegisterCmd(StakeDifficultyNtfnMethod, (*StakeDifficultyNtfn)(nil), flags)
+	MustRegisterCmd(WinningTicketsNtfnMethod, (*WinningTicketsNtfn)(nil), flags)
 }

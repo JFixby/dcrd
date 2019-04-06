@@ -10,6 +10,7 @@ package indexers
 
 import (
 	"encoding/binary"
+	"errors"
 
 	"github.com/decred/dcrd/blockchain"
 	"github.com/decred/dcrd/database"
@@ -20,6 +21,10 @@ var (
 	// byteOrder is the preferred byte order used for serializing numeric
 	// fields for storage in the database.
 	byteOrder = binary.LittleEndian
+
+	// errInterruptRequested indicates that an operation was cancelled due
+	// to a user-requested interrupt.
+	errInterruptRequested = errors.New("interrupt requested")
 )
 
 // NeedsInputser provides a generic interface for an indexer to specify the it
@@ -37,6 +42,9 @@ type Indexer interface {
 	// Name returns the human-readable name of the index.
 	Name() string
 
+	// Return the current version of the index.
+	Version() uint32
+
 	// Create is invoked when the indexer manager determines the index needs
 	// to be created for the first time.
 	Create(dbTx database.Tx) error
@@ -53,6 +61,13 @@ type Indexer interface {
 	// DisconnectBlock is invoked when the index manager is notified that a
 	// block has been disconnected from the main chain.
 	DisconnectBlock(dbTx database.Tx, block, parent *dcrutil.Block, view *blockchain.UtxoViewpoint) error
+}
+
+// IndexDropper provides a method to remove an index from the database. Indexers
+// may implement this for a more efficient way of deleting themselves from the
+// database rather than simply dropping a bucket.
+type IndexDropper interface {
+	DropIndex(db database.DB, interrupt <-chan struct{}) error
 }
 
 // AssertError identifies an error that indicates an internal code consistency
@@ -96,4 +111,17 @@ type internalBucket interface {
 func approvesParent(block *dcrutil.Block) bool {
 	return dcrutil.IsFlagSet16(block.MsgBlock().Header.VoteBits,
 		dcrutil.BlockValid)
+}
+
+// interruptRequested returns true when the provided channel has been closed.
+// This simplifies early shutdown slightly since the caller can just use an if
+// statement instead of a select.
+func interruptRequested(interrupted <-chan struct{}) bool {
+	select {
+	case <-interrupted:
+		return true
+	default:
+	}
+
+	return false
 }

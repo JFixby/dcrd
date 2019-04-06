@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -52,19 +52,6 @@ type signatureTest struct {
 	isValid bool
 }
 
-// decodeHex decodes the passed hex string and returns the resulting bytes.  It
-// panics if an error occurs.  This is only used in the tests as a helper since
-// the only way it can fail is if there is an error in the test source code.
-func decodeHex(hexStr string) []byte {
-	b, err := hex.DecodeString(hexStr)
-	if err != nil {
-		panic("invalid hex string in test source: err " + err.Error() +
-			", hex: " + hexStr)
-	}
-
-	return b
-}
-
 type pubKeyTest struct {
 	name    string
 	key     []byte
@@ -75,7 +62,6 @@ type pubKeyTest struct {
 const (
 	TstPubkeyUncompressed byte = 0x4 // x coord + y coord
 	TstPubkeyCompressed   byte = 0x2 // y_bit + x coord
-	TstPubkeyHybrid       byte = 0x6 // y_bit + x coord + y coord
 )
 
 var pubKeyTests = []pubKeyTest{
@@ -106,8 +92,7 @@ var pubKeyTests = []pubKeyTest{
 			0xd4, 0xc0, 0x3f, 0x99, 0x9b, 0x86, 0x43, 0xf6, 0x56,
 			0xb4, 0x12, 0xa3,
 		},
-		isValid: true,
-		format:  TstPubkeyHybrid,
+		isValid: false,
 	},
 	// from tx 0b09c51c51ff762f00fb26217269d2a18e77a4fa87d69b3c363ab4df16543f20
 	{
@@ -142,8 +127,7 @@ var pubKeyTests = []pubKeyTest{
 			0xa6, 0x85, 0x54, 0x19, 0x9c, 0x47, 0xd0, 0x8f, 0xfb,
 			0x10, 0xd4, 0xb8,
 		},
-		format:  TstPubkeyHybrid,
-		isValid: true,
+		isValid: false,
 	},
 }
 
@@ -165,11 +149,9 @@ func TestPubKeys(t *testing.T) {
 		var pkStr []byte
 		switch test.format {
 		case TstPubkeyUncompressed:
-			pkStr = (PublicKey)(pk).SerializeUncompressed()
+			pkStr = pk.SerializeUncompressed()
 		case TstPubkeyCompressed:
-			pkStr = (PublicKey)(pk).SerializeCompressed()
-		case TstPubkeyHybrid:
-			pkStr = (PublicKey)(pk).SerializeHybrid()
+			pkStr = pk.SerializeCompressed()
 		}
 		if !bytes.Equal(test.key, pkStr) {
 			t.Errorf("%s pubkey: serialized keys do not match.",

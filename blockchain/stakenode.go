@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -13,146 +13,150 @@ import (
 	"github.com/decred/dcrd/database"
 )
 
-// nodeAtHeightFromTopNode goes backwards through a node until it a reaches
-// the node with a desired block height; it returns this block.  The benefit is
-// this works for both the main chain and the side chain.
-func (b *BlockChain) nodeAtHeightFromTopNode(node *blockNode,
-	toTraverse int64) (*blockNode, error) {
-	oldNode := node
-	var err error
-
-	for i := 0; i < int(toTraverse); i++ {
-		// Get the previous block node.
-		oldNode, err = b.getPrevNodeFromNode(oldNode)
-		if err != nil {
-			return nil, err
-		}
-
-		if oldNode == nil {
-			return nil, fmt.Errorf("unable to obtain previous node; " +
-				"ancestor is genesis block")
-		}
-	}
-
-	return oldNode, nil
-}
-
-// fetchNewTicketsForNode fetches the list of newly maturing tickets for a
-// given node by traversing backwards through its parents until it finds the
-// block that contains the original tickets to mature.
+// maybeFetchNewTickets loads the list of newly maturing tickets for a given
+// node by traversing backwards through its parents until it finds the block
+// that contains the original tickets to mature if needed.
 //
-// This function is NOT safe for concurrent access and must be called with
-// the chainLock held for writes.
-func (b *BlockChain) fetchNewTicketsForNode(node *blockNode) ([]chainhash.Hash, error) {
-	// If we're before the stake enabled height, there can be no
-	// tickets in the live ticket pool.
-	if node.height < b.chainParams.StakeEnabledHeight {
-		return []chainhash.Hash{}, nil
+// This function MUST be called with the chain state lock held (for writes).
+func (b *BlockChain) maybeFetchNewTickets(node *blockNode) error {
+	// Nothing to do if the tickets are already loaded.  It's important to make
+	// the distinction here that nil means the value was never looked up, while
+	// an empty slice means that there are no new tickets at this height.
+	if node.newTickets != nil {
+		return nil
 	}
 
-	// If we already cached the tickets, simply return the cached list.
-	// It's important to make the distinction here that nil means the
-	// value was never looked up, while an empty slice of pointers means
-	// that there were no new tickets at this height.
-	if node.newTickets != nil {
-		return node.newTickets, nil
+	// No tickets in the live ticket pool are possible before stake enabled
+	// height.
+	if node.height < b.chainParams.StakeEnabledHeight {
+		node.newTickets = []chainhash.Hash{}
+		return nil
 	}
 
 	// Calculate block number for where new tickets matured from and retrieve
-	// this block from DB or in memory if it's a sidechain.
-	matureNode, err := b.nodeAtHeightFromTopNode(node,
-		int64(b.chainParams.TicketMaturity))
+	// its block from DB.
+	matureNode := node.RelativeAncestor(int64(b.chainParams.TicketMaturity))
+	if matureNode == nil {
+		return fmt.Errorf("unable to obtain ancestor %d blocks prior to %s "+
+			"(height %d)", b.chainParams.TicketMaturity, node.hash, node.height)
+	}
+	matureBlock, err := b.fetchBlockByNode(matureNode)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	matureBlock, errBlock := b.fetchBlockFromHash(&matureNode.hash)
-	if errBlock != nil {
-		return nil, errBlock
-	}
-
+	// Extract any ticket purchases from the block and cache them.
 	tickets := []chainhash.Hash{}
 	for _, stx := range matureBlock.MsgBlock().STransactions {
-		if is, _ := stake.IsSStx(stx); is {
-			h := stx.TxHash()
-			tickets = append(tickets, h)
+		if stake.IsSStx(stx) {
+			tickets = append(tickets, stx.TxHash())
 		}
 	}
-
-	// Set the new tickets in memory so that they exist for future
-	// reference in the node.
 	node.newTickets = tickets
-
-	return tickets, nil
+	return nil
 }
 
-// fetchStakeNode will scour the blockchain from the best block, for which we
-// know that there is valid stake node.  The first step is finding a path to the
-// ancestor, or, if on a side chain, the path to the common ancestor, followed
-// by the path to the sidechain node.  After this path is established, the
-// algorithm walks along the path, regenerating and storing intermediate nodes
-// as it does so, until the final stake node of interest is populated with the
-// correct data.
+// maybeFetchTicketInfo loads and populates prunable ticket information in the
+// provided block node if needed.
+//
+// This function MUST be called with the chain state lock held (for writes).
+func (b *BlockChain) maybeFetchTicketInfo(node *blockNode) error {
+	// Load and populate the tickets maturing in this block when they are not
+	// already loaded.
+	if err := b.maybeFetchNewTickets(node); err != nil {
+		return err
+	}
+
+	// Load and populate the vote and revocation information as needed.
+	if node.ticketsVoted == nil || node.ticketsRevoked == nil ||
+		node.votes == nil {
+
+		block, err := b.fetchBlockByNode(node)
+		if err != nil {
+			return err
+		}
+
+		node.populateTicketInfo(stake.FindSpentTicketsInBlock(block.MsgBlock()))
+	}
+
+	return nil
+}
+
+// fetchStakeNode returns the stake node associated with the requested node
+// while handling the logic to create the stake node if needed.  In the majority
+// of cases, the stake node either already exists and is simply returned, or it
+// can be quickly created when the parent stake node is already available.
+// However, it should be noted that, since old stake nodes are pruned, this
+// function can be quite expensive if a node deep in history or on a long side
+// chain is requested since that requires reconstructing all of the intermediate
+// nodes along the path from the existing tip to the requested node that have
+// not already been pruned.
 //
 // This function MUST be called with the chain state lock held (for writes).
 func (b *BlockChain) fetchStakeNode(node *blockNode) (*stake.Node, error) {
-	// If we already have the stake node fetched, returned the cached result.
-	// Stake nodes are immutable.
+	// Return the cached immutable stake node when it is already loaded.
 	if node.stakeNode != nil {
 		return node.stakeNode, nil
 	}
 
-	// If the parent stake node is cached, connect the stake node
-	// from there.
-	if node.parent != nil {
-		if node.stakeNode == nil && node.parent.stakeNode != nil {
-			var err error
-			if node.newTickets == nil {
-				node.newTickets, err = b.fetchNewTicketsForNode(node)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			node.stakeNode, err = node.parent.stakeNode.ConnectNode(node.header,
-				node.ticketsSpent,
-				node.ticketsRevoked,
-				node.newTickets)
-			if err != nil {
-				return nil, err
-			}
-
-			return node.stakeNode, nil
+	// Create the requested stake node from the parent stake node if it is
+	// already loaded as an optimization.
+	if node.parent.stakeNode != nil {
+		// Populate the prunable ticket information as needed.
+		if err := b.maybeFetchTicketInfo(node); err != nil {
+			return nil, err
 		}
+
+		stakeNode, err := node.parent.stakeNode.ConnectNode(node.lotteryIV(),
+			node.ticketsVoted, node.ticketsRevoked, node.newTickets)
+		if err != nil {
+			return nil, err
+		}
+		node.stakeNode = stakeNode
+
+		return stakeNode, nil
 	}
 
-	// We need to generate a path to the stake node and restore it
-	// it through the entire path.  The bestNode stake node must
-	// always be filled in, so assume it is safe to begin working
-	// backwards from there.
-	detachNodes, attachNodes, err := b.getReorganizeNodes(node)
-	if err != nil {
-		return nil, err
-	}
-	current := b.bestNode
+	// -------------------------------------------------------------------------
+	// In order to create the stake node, it is necessary to generate a path to
+	// the stake node from the current tip, which always has the stake node
+	// loaded, and undo the effects of each block back to, and including, the
+	// fork point (which might be the requested node itself), and then, in the
+	// case the target node is on a side chain, replay the effects of each on
+	// the side chain.  In most cases, many of the stake nodes along the path
+	// will already be loaded, so, they are only regenerated and populated if
+	// they aren't.
+	//
+	// For example, consider the following scenario:
+	//   A -> B  -> C  -> D
+	//    \-> B' -> C'
+	//
+	// Further assume the requested stake node is for C'.  The code that follows
+	// will regenerate and populate (only for those not already loaded) the
+	// stake nodes for C, B, A, B', and finally, C'.
+	// -------------------------------------------------------------------------
 
-	// Move backwards through the main chain, undoing the ticket
-	// treaps for each block.  The database is passed because the
-	// undo data and new tickets data for each block may not yet
-	// be filled in and may require the database to look up.
-	err = b.db.View(func(dbTx database.Tx) error {
-		for e := detachNodes.Front(); e != nil; e = e.Next() {
-			n := e.Value.(*blockNode)
-			if n.stakeNode == nil {
-				var errLocal error
-				n.stakeNode, errLocal =
-					current.stakeNode.DisconnectNode(n.header,
-						n.stakeUndoData, n.newTickets, dbTx)
-				if errLocal != nil {
-					return errLocal
-				}
+	// Start by undoing the effects from the current tip back to, and including
+	// the fork point per the above description.
+	tip := b.bestChain.Tip()
+	fork := b.bestChain.FindFork(node)
+	err := b.db.View(func(dbTx database.Tx) error {
+		for n := tip; n != nil && n != fork; n = n.parent {
+			// No need to load nodes that are already loaded.
+			prev := n.parent
+			if prev == nil || prev.stakeNode != nil {
+				continue
 			}
-			current = n
+
+			// Generate the previous stake node by starting with the child stake
+			// node and undoing the modifications caused by the stake details in
+			// the previous block.
+			stakeNode, err := n.stakeNode.DisconnectNode(prev.lotteryIV(), nil,
+				nil, dbTx)
+			if err != nil {
+				return err
+			}
+			prev.stakeNode = stakeNode
 		}
 
 		return nil
@@ -161,61 +165,41 @@ func (b *BlockChain) fetchStakeNode(node *blockNode) (*stake.Node, error) {
 		return nil, err
 	}
 
-	// Detach the final block and get the filled in node for the fork
-	// point.
-	err = b.db.View(func(dbTx database.Tx) error {
-		if current.parent.stakeNode == nil {
-			var errLocal error
-			current.parent.stakeNode, errLocal =
-				current.stakeNode.DisconnectNode(current.parent.header,
-					current.parent.stakeUndoData, current.parent.newTickets, dbTx)
-			if errLocal != nil {
-				return errLocal
-			}
-		}
-		current = current.parent
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	// Nothing more to do if the requested node is the fork point itself.
+	if node == fork {
+		return node.stakeNode, nil
 	}
 
-	// The node is at a fork point in the block chain, so just return
-	// this stake node.
-	if attachNodes.Len() == 0 {
-		if current.hash != node.hash ||
-			current.height != node.height {
-			return nil, AssertError("failed to restore stake node to " +
-				"fork point when fetching")
+	// The requested node is on a side chain, so replay the effects of the
+	// blocks up to the requested node per the above description.
+	//
+	// Note that the blocks between the fork point and the requested node are
+	// added to the slice from back to front so that they are attached in the
+	// appropriate order when iterating the slice.
+	attachNodes := make([]*blockNode, node.height-fork.height)
+	for n := node; n != nil && n != fork; n = n.parent {
+		attachNodes[n.height-fork.height-1] = n
+	}
+	for _, n := range attachNodes {
+		// No need to load nodes that are already loaded.
+		if n.stakeNode != nil {
+			continue
 		}
 
-		return current.stakeNode, nil
-	}
-
-	// The requested node is on a side chain, so we need to apply the
-	// transactions and spend information from each of the nodes to attach.
-	// Not that side chain ticket data and undo data is always stored
-	// in memory, so there is not need to use the database here.
-	for e := attachNodes.Front(); e != nil; e = e.Next() {
-		n := e.Value.(*blockNode)
-
-		if n.stakeNode == nil {
-			if n.newTickets == nil {
-				n.newTickets, err = b.fetchNewTicketsForNode(n)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			n.stakeNode, err = current.stakeNode.ConnectNode(n.header,
-				n.ticketsSpent, n.ticketsRevoked, n.newTickets)
-			if err != nil {
-				return nil, err
-			}
+		// Populate the prunable ticket information as needed.
+		if err := b.maybeFetchTicketInfo(n); err != nil {
+			return nil, err
 		}
 
-		current = n
+		// Generate the stake node by applying the stake details in the current
+		// block to the previous stake node.
+		stakeNode, err := n.parent.stakeNode.ConnectNode(n.lotteryIV(),
+			n.ticketsVoted, n.ticketsRevoked, n.newTickets)
+		if err != nil {
+			return nil, err
+		}
+		n.stakeNode = stakeNode
 	}
 
-	return current.stakeNode, nil
+	return node.stakeNode, nil
 }

@@ -20,8 +20,12 @@ import (
 const maxFailedAttempts = 25
 
 var (
-	//ErrDialNil is used to indicate that Dial cannot be nil in the configuration.
+	// ErrDialNil is used to indicate that Dial cannot be nil in the configuration.
 	ErrDialNil = errors.New("config: dial cannot be nil")
+
+	// ErrBothDialsFilled is used to indicate that Dial and DialAddr cannot both
+	// be specified in the configuration.
+	ErrBothDialsFilled = errors.New("config: cannot specify both Dial and DialAddr")
 
 	// maxRetryDuration is the max duration of time retrying of a persistent
 	// connection is allowed to grow to.  This is necessary since the retry
@@ -39,7 +43,7 @@ var (
 )
 
 // ConnState represents the state of the requested connection.
-type ConnState uint8
+type ConnState uint32
 
 // ConnState can be either pending, established, disconnected or failed.  When
 // a new connection is requested, it is attempted and categorized as
@@ -56,22 +60,18 @@ const (
 // connection will be retried on disconnection.
 type ConnReq struct {
 	// The following variables must only be used atomically.
-	id uint64
+	id    uint64
+	state uint32
 
-	Addr      net.Addr
-	Permanent bool
-
-	conn       net.Conn
-	state      ConnState
-	stateMtx   sync.RWMutex
 	retryCount uint32
+	conn       net.Conn
+	Addr       net.Addr
+	Permanent  bool
 }
 
 // updateState updates the state of the connection request.
 func (c *ConnReq) updateState(state ConnState) {
-	c.stateMtx.Lock()
-	c.state = state
-	c.stateMtx.Unlock()
+	atomic.StoreUint32(&c.state, uint32(state))
 }
 
 // ID returns a unique identifier for the connection request.
@@ -81,15 +81,12 @@ func (c *ConnReq) ID() uint64 {
 
 // State is the connection state of the requested connection.
 func (c *ConnReq) State() ConnState {
-	c.stateMtx.RLock()
-	state := c.state
-	c.stateMtx.RUnlock()
-	return state
+	return ConnState(atomic.LoadUint32(&c.state))
 }
 
 // String returns a human-readable string for the connection request.
 func (c *ConnReq) String() string {
-	if c.Addr.String() == "" {
+	if c.Addr == nil || c.Addr.String() == "" {
 		return fmt.Sprintf("reqid %d", atomic.LoadUint64(&c.id))
 	}
 	return fmt.Sprintf("%s (reqid %d)", c.Addr, atomic.LoadUint64(&c.id))
@@ -140,8 +137,14 @@ type Config struct {
 	// to.  If nil, no new connections will be made automatically.
 	GetNewAddress func() (net.Addr, error)
 
-	// Dial connects to the address on the named network. It cannot be nil.
-	Dial func(net.Addr) (net.Conn, error)
+	// Dial connects to the address on the named network. Either Dial or
+	// DialAddr need to be specified (but not both).
+	Dial func(network, addr string) (net.Conn, error)
+
+	// DialAddr is an alternative to Dial which receives a full net.Addr instead
+	// of just the protocol family and address. Either DialAddr or Dial need
+	// to be specified (but not both).
+	DialAddr func(net.Addr) (net.Conn, error)
 }
 
 // handleConnected is used to queue a successful connection.
@@ -307,7 +310,14 @@ func (cm *ConnManager) Connect(c *ConnReq) {
 		atomic.StoreUint64(&c.id, atomic.AddUint64(&cm.connReqCount, 1))
 	}
 	log.Debugf("Attempting to connect to %v", c)
-	conn, err := cm.cfg.Dial(c.Addr)
+
+	var conn net.Conn
+	var err error
+	if cm.cfg.Dial != nil {
+		conn, err = cm.cfg.Dial(c.Addr.Network(), c.Addr.String())
+	} else {
+		conn, err = cm.cfg.DialAddr(c.Addr)
+	}
 	if err != nil {
 		cm.requests <- handleFailed{c, err}
 	} else {
@@ -406,8 +416,11 @@ func (cm *ConnManager) Stop() {
 // New returns a new connection manager.
 // Use Start to start connecting to the network.
 func New(cfg *Config) (*ConnManager, error) {
-	if cfg.Dial == nil {
+	if cfg.Dial == nil && cfg.DialAddr == nil {
 		return nil, ErrDialNil
+	}
+	if cfg.Dial != nil && cfg.DialAddr != nil {
+		return nil, ErrBothDialsFilled
 	}
 	// Default to sane values
 	if cfg.RetryDuration <= 0 {

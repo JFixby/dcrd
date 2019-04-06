@@ -1,5 +1,5 @@
-// Copyright (c) 2013-2015 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,8 +10,9 @@ import (
 	"fmt"
 
 	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainec"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/dcrec"
+	"github.com/decred/dcrd/dcrec/secp256k1"
 	"github.com/decred/dcrd/dcrutil"
 )
 
@@ -19,6 +20,11 @@ const (
 	// MaxDataCarrierSize is the maximum number of bytes allowed in pushed
 	// data to be considered a nulldata transaction.
 	MaxDataCarrierSize = 256
+
+	// nilAddrErrStr is the common error string to use for attempts to
+	// generate payment scripts to nil addresses embedded within a
+	// dcrutil.Address interface.
+	nilAddrErrStr = "unable to generate payment script for nil address"
 )
 
 // ScriptClass is an enumeration for the list of standard types of script.
@@ -131,34 +137,6 @@ func isPubkeyHashAlt(pops []parsedOpcode) bool {
 		pops[5].opcode.value == OP_CHECKSIGALT
 }
 
-// isScriptHash returns true if the script passed is a pay-to-script-hash
-// transaction, false otherwise.
-func isScriptHash(pops []parsedOpcode) bool {
-	return len(pops) == 3 &&
-		pops[0].opcode.value == OP_HASH160 &&
-		pops[1].opcode.value == OP_DATA_20 &&
-		pops[2].opcode.value == OP_EQUAL
-}
-
-// isAnyKindOfScriptHash returns true if the script passed is a pay-to-script-hash
-// or stake pay-to-script-hash transaction, false otherwise. Used to make the
-// engine have the correct behaviour.
-func isAnyKindOfScriptHash(pops []parsedOpcode) bool {
-	standardP2SH := len(pops) == 3 &&
-		pops[0].opcode.value == OP_HASH160 &&
-		pops[1].opcode.value == OP_DATA_20 &&
-		pops[2].opcode.value == OP_EQUAL
-	if standardP2SH {
-		return true
-	}
-
-	return len(pops) == 4 &&
-		(pops[0].opcode.value >= 186 && pops[0].opcode.value <= 189) &&
-		pops[1].opcode.value == OP_HASH160 &&
-		pops[2].opcode.value == OP_DATA_20 &&
-		pops[3].opcode.value == OP_EQUAL
-}
-
 // isMultiSig returns true if the passed script is a multisig transaction, false
 // otherwise.
 func isMultiSig(pops []parsedOpcode) bool {
@@ -234,7 +212,8 @@ func isNullData(pops []parsedOpcode) bool {
 
 	return l == 2 &&
 		pops[0].opcode.value == OP_RETURN &&
-		pops[1].opcode.value <= OP_PUSHDATA4 &&
+		(isSmallInt(pops[1].opcode) || pops[1].opcode.value <=
+			OP_PUSHDATA4) &&
 		len(pops[1].data) <= MaxDataCarrierSize
 }
 
@@ -337,27 +316,28 @@ func isSStxChange(pops []parsedOpcode) bool {
 // scriptType returns the type of the script being inspected from the known
 // standard types.
 func typeOfScript(pops []parsedOpcode) ScriptClass {
-	if isPubkey(pops) {
+	switch {
+	case isPubkey(pops):
 		return PubKeyTy
-	} else if isPubkeyAlt(pops) {
+	case isPubkeyAlt(pops):
 		return PubkeyAltTy
-	} else if isPubkeyHash(pops) {
+	case isPubkeyHash(pops):
 		return PubKeyHashTy
-	} else if isPubkeyHashAlt(pops) {
+	case isPubkeyHashAlt(pops):
 		return PubkeyHashAltTy
-	} else if isScriptHash(pops) {
+	case isScriptHash(pops):
 		return ScriptHashTy
-	} else if isMultiSig(pops) {
+	case isMultiSig(pops):
 		return MultiSigTy
-	} else if isNullData(pops) {
+	case isNullData(pops):
 		return NullDataTy
-	} else if isStakeSubmission(pops) {
+	case isStakeSubmission(pops):
 		return StakeSubmissionTy
-	} else if isStakeGen(pops) {
+	case isStakeGen(pops):
 		return StakeGenTy
-	} else if isStakeRevocation(pops) {
+	case isStakeRevocation(pops):
 		return StakeRevocationTy
-	} else if isSStxChange(pops) {
+	case isSStxChange(pops):
 		return StakeSubChangeTy
 	}
 
@@ -492,7 +472,7 @@ func GetStakeOutSubclass(pkScript []byte) (ScriptClass, error) {
 	if isStake {
 		var stakeSubscript []parsedOpcode
 		for _, pop := range pkPops {
-			if pop.opcode.value >= 186 && pop.opcode.value <= 189 {
+			if isStakeOpcode(pop.opcode) {
 				continue
 			}
 			stakeSubscript = append(stakeSubscript, pop)
@@ -521,7 +501,7 @@ func ContainsStakeOpCodes(pkScript []byte) (bool, error) {
 	}
 
 	for _, pop := range shPops {
-		if pop.opcode.value >= 186 && pop.opcode.value <= 189 {
+		if isStakeOpcode(pop.opcode) {
 			return true, nil
 		}
 	}
@@ -548,9 +528,10 @@ func CalcScriptInfo(sigScript, pkScript []byte, bip16 bool) (*ScriptInfo, error)
 	si := new(ScriptInfo)
 	si.PkScriptClass = typeOfScript(pkPops)
 
-	// Can't have a pkScript that doesn't just push data.
+	// Can't have a signature script that doesn't just push data.
 	if !isPushOnly(sigPops) {
-		return nil, ErrStackNonPushOnly
+		return nil, scriptError(ErrNotPushOnly,
+			"signature script is not push only")
 	}
 
 	subClass := ScriptClass(0)
@@ -610,7 +591,8 @@ func CalcMultiSigStats(script []byte) (int, int, error) {
 	// items must be on the stack per:
 	//  OP_1 PUBKEY OP_1 OP_CHECKMULTISIG
 	if len(pops) < 4 {
-		return 0, 0, ErrStackUnderflow
+		str := fmt.Sprintf("script %x is not a multisig script", script)
+		return 0, 0, scriptError(ErrNotMultisigScript, str)
 	}
 
 	numSigs := asSmallInt(pops[0].opcode)
@@ -645,7 +627,7 @@ func payToPubKeyHashScript(pubKeyHash []byte) ([]byte, error) {
 // output to a 20-byte pubkey hash of an Edwards public key. It is expected
 // that the input is a valid hash.
 func payToPubKeyHashEdwardsScript(pubKeyHash []byte) ([]byte, error) {
-	edwardsData := []byte{byte(edwards)}
+	edwardsData := []byte{byte(dcrec.STEd25519)}
 	return NewScriptBuilder().AddOp(OP_DUP).AddOp(OP_HASH160).
 		AddData(pubKeyHash).AddOp(OP_EQUALVERIFY).AddData(edwardsData).
 		AddOp(OP_CHECKSIGALT).Script()
@@ -656,7 +638,7 @@ func payToPubKeyHashEdwardsScript(pubKeyHash []byte) ([]byte, error) {
 // a schnorr signature instead of a classic secp256k1 signature. It is
 // expected that the input is a valid hash.
 func payToPubKeyHashSchnorrScript(pubKeyHash []byte) ([]byte, error) {
-	schnorrData := []byte{byte(secSchnorr)}
+	schnorrData := []byte{byte(dcrec.STSchnorrSecp256k1)}
 	return NewScriptBuilder().AddOp(OP_DUP).AddOp(OP_HASH160).
 		AddData(pubKeyHash).AddOp(OP_EQUALVERIFY).AddData(schnorrData).
 		AddOp(OP_CHECKSIGALT).Script()
@@ -708,7 +690,7 @@ func payToPubKeyScript(serializedPubKey []byte) ([]byte, error) {
 // payToEdwardsPubKeyScript creates a new script to pay a transaction output
 // to an Ed25519 public key. It is expected that the input is a valid pubkey.
 func payToEdwardsPubKeyScript(serializedPubKey []byte) ([]byte, error) {
-	edwardsData := []byte{byte(edwards)}
+	edwardsData := []byte{byte(dcrec.STEd25519)}
 	return NewScriptBuilder().AddData(serializedPubKey).AddData(edwardsData).
 		AddOp(OP_CHECKSIGALT).Script()
 }
@@ -717,7 +699,7 @@ func payToEdwardsPubKeyScript(serializedPubKey []byte) ([]byte, error) {
 // to a secp256k1 public key, but to be signed by Schnorr type signature. It
 // is expected that the input is a valid pubkey.
 func payToSchnorrPubKeyScript(serializedPubKey []byte) ([]byte, error) {
-	schnorrData := []byte{byte(secSchnorr)}
+	schnorrData := []byte{byte(dcrec.STSchnorrSecp256k1)}
 	return NewScriptBuilder().AddData(serializedPubKey).AddData(schnorrData).
 		AddOp(OP_CHECKSIGALT).Script()
 }
@@ -726,24 +708,32 @@ func payToSchnorrPubKeyScript(serializedPubKey []byte) ([]byte, error) {
 // public key hash, but tags the output with OP_SSTX. For use in constructing
 // valid SStxs.
 func PayToSStx(addr dcrutil.Address) ([]byte, error) {
-	if addr == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
 	// Only pay to pubkey hash and pay to script hash are
 	// supported.
 	scriptType := PubKeyHashTy
 	switch addr := addr.(type) {
 	case *dcrutil.AddressPubKeyHash:
-		if addr.DSA(addr.Net()) != chainec.ECTypeSecp256k1 {
-			return nil, ErrUnsupportedAddress
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
-		break
+		if addr.DSA(addr.Net()) != dcrec.STEcdsaSecp256k1 {
+			str := "unable to generate payment script for " +
+				"unsupported digital signature algorithm"
+			return nil, scriptError(ErrUnsupportedAddress, str)
+		}
+
 	case *dcrutil.AddressScriptHash:
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
+		}
 		scriptType = ScriptHashTy
-		break
+
 	default:
-		return nil, ErrUnsupportedAddress
+		str := fmt.Sprintf("unable to generate payment script for "+
+			"unsupported address type %T", addr)
+		return nil, scriptError(ErrUnsupportedAddress, str)
 	}
 
 	hash := addr.ScriptAddress()
@@ -761,24 +751,32 @@ func PayToSStx(addr dcrutil.Address) ([]byte, error) {
 // public key hash, but tags the output with OP_SSTXCHANGE. For use in constructing
 // valid SStxs.
 func PayToSStxChange(addr dcrutil.Address) ([]byte, error) {
-	if addr == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
 	// Only pay to pubkey hash and pay to script hash are
 	// supported.
 	scriptType := PubKeyHashTy
 	switch addr := addr.(type) {
 	case *dcrutil.AddressPubKeyHash:
-		if addr.DSA(addr.Net()) != chainec.ECTypeSecp256k1 {
-			return nil, ErrUnsupportedAddress
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
-		break
+		if addr.DSA(addr.Net()) != dcrec.STEcdsaSecp256k1 {
+			str := "unable to generate payment script for " +
+				"unsupported digital signature algorithm"
+			return nil, scriptError(ErrUnsupportedAddress, str)
+		}
+
 	case *dcrutil.AddressScriptHash:
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
+		}
 		scriptType = ScriptHashTy
-		break
+
 	default:
-		return nil, ErrUnsupportedAddress
+		str := fmt.Sprintf("unable to generate payment script for "+
+			"unsupported address type %T", addr)
+		return nil, scriptError(ErrUnsupportedAddress, str)
 	}
 
 	hash := addr.ScriptAddress()
@@ -796,24 +794,32 @@ func PayToSStxChange(addr dcrutil.Address) ([]byte, error) {
 // hash or script hash, but tags the output with OP_SSGEN. For use in constructing
 // valid SSGen txs.
 func PayToSSGen(addr dcrutil.Address) ([]byte, error) {
-	if addr == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
 	// Only pay to pubkey hash and pay to script hash are
 	// supported.
 	scriptType := PubKeyHashTy
 	switch addr := addr.(type) {
 	case *dcrutil.AddressPubKeyHash:
-		if addr.DSA(addr.Net()) != chainec.ECTypeSecp256k1 {
-			return nil, ErrUnsupportedAddress
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
-		break
+		if addr.DSA(addr.Net()) != dcrec.STEcdsaSecp256k1 {
+			str := "unable to generate payment script for " +
+				"unsupported digital signature algorithm"
+			return nil, scriptError(ErrUnsupportedAddress, str)
+		}
+
 	case *dcrutil.AddressScriptHash:
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
+		}
 		scriptType = ScriptHashTy
-		break
+
 	default:
-		return nil, ErrUnsupportedAddress
+		str := fmt.Sprintf("unable to generate payment script for "+
+			"unsupported address type %T", addr)
+		return nil, scriptError(ErrUnsupportedAddress, str)
 	}
 
 	hash := addr.ScriptAddress()
@@ -832,10 +838,6 @@ func PayToSSGen(addr dcrutil.Address) ([]byte, error) {
 // valid SSGen txs. Unlike PayToSSGen, this function directly uses the HASH160
 // pubkeyhash (instead of an address).
 func PayToSSGenPKHDirect(pkh []byte) ([]byte, error) {
-	if pkh == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
 	return NewScriptBuilder().AddOp(OP_SSGEN).AddOp(OP_DUP).
 		AddOp(OP_HASH160).AddData(pkh).AddOp(OP_EQUALVERIFY).
 		AddOp(OP_CHECKSIG).Script()
@@ -846,10 +848,6 @@ func PayToSSGenPKHDirect(pkh []byte) ([]byte, error) {
 // valid SSGen txs. Unlike PayToSSGen, this function directly uses the HASH160
 // script hash (instead of an address).
 func PayToSSGenSHDirect(sh []byte) ([]byte, error) {
-	if sh == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
 	return NewScriptBuilder().AddOp(OP_SSGEN).AddOp(OP_HASH160).
 		AddData(sh).AddOp(OP_EQUAL).Script()
 }
@@ -858,24 +856,32 @@ func PayToSSGenSHDirect(sh []byte) ([]byte, error) {
 // public key hash, but tags the output with OP_SSRTX. For use in constructing
 // valid SSRtx.
 func PayToSSRtx(addr dcrutil.Address) ([]byte, error) {
-	if addr == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
 	// Only pay to pubkey hash and pay to script hash are
 	// supported.
 	scriptType := PubKeyHashTy
 	switch addr := addr.(type) {
 	case *dcrutil.AddressPubKeyHash:
-		if addr.DSA(addr.Net()) != chainec.ECTypeSecp256k1 {
-			return nil, ErrUnsupportedAddress
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
-		break
+		if addr.DSA(addr.Net()) != dcrec.STEcdsaSecp256k1 {
+			str := "unable to generate payment script for " +
+				"unsupported digital signature algorithm"
+			return nil, scriptError(ErrUnsupportedAddress, str)
+		}
+
 	case *dcrutil.AddressScriptHash:
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
+		}
 		scriptType = ScriptHashTy
-		break
+
 	default:
-		return nil, ErrUnsupportedAddress
+		str := fmt.Sprintf("unable to generate payment script for "+
+			"unsupported address type %T", addr)
+		return nil, scriptError(ErrUnsupportedAddress, str)
 	}
 
 	hash := addr.ScriptAddress()
@@ -894,10 +900,6 @@ func PayToSSRtx(addr dcrutil.Address) ([]byte, error) {
 // valid SSRtx. Unlike PayToSSRtx, this function directly uses the HASH160
 // pubkeyhash (instead of an address).
 func PayToSSRtxPKHDirect(pkh []byte) ([]byte, error) {
-	if pkh == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
 	return NewScriptBuilder().AddOp(OP_SSRTX).AddOp(OP_DUP).
 		AddOp(OP_HASH160).AddData(pkh).AddOp(OP_EQUALVERIFY).
 		AddOp(OP_CHECKSIG).Script()
@@ -908,107 +910,86 @@ func PayToSSRtxPKHDirect(pkh []byte) ([]byte, error) {
 // valid SSRtx. Unlike PayToSSRtx, this function directly uses the HASH160
 // script hash (instead of an address).
 func PayToSSRtxSHDirect(sh []byte) ([]byte, error) {
-	if sh == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
 	return NewScriptBuilder().AddOp(OP_SSRTX).AddOp(OP_HASH160).
 		AddData(sh).AddOp(OP_EQUAL).Script()
 }
 
 // GenerateSStxAddrPush generates an OP_RETURN push for SSGen payment addresses in
 // an SStx.
-func GenerateSStxAddrPush(addr dcrutil.Address, amount dcrutil.Amount,
-	limits uint16) ([]byte, error) {
-	if addr == nil {
-		return nil, ErrUnsupportedAddress
-	}
-
+func GenerateSStxAddrPush(addr dcrutil.Address, amount dcrutil.Amount, limits uint16) ([]byte, error) {
 	// Only pay to pubkey hash and pay to script hash are
 	// supported.
 	scriptType := PubKeyHashTy
 	switch addr := addr.(type) {
 	case *dcrutil.AddressPubKeyHash:
-		if addr.DSA(addr.Net()) != chainec.ECTypeSecp256k1 {
-			return nil, ErrUnsupportedAddress
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
-		break
+		if addr.DSA(addr.Net()) != dcrec.STEcdsaSecp256k1 {
+			str := "unable to generate payment script for " +
+				"unsupported digital signature algorithm"
+			return nil, scriptError(ErrUnsupportedAddress, str)
+		}
+
 	case *dcrutil.AddressScriptHash:
+		if addr == nil {
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
+		}
 		scriptType = ScriptHashTy
-		break
+
 	default:
-		return nil, ErrUnsupportedAddress
+		str := fmt.Sprintf("unable to generate payment script for "+
+			"unsupported address type %T", addr)
+		return nil, scriptError(ErrUnsupportedAddress, str)
 	}
 
-	// Prefix
-	dataPushes := []byte{
-		0x6a, // OP_RETURN
-		0x1e, // OP_DATA_30
-	}
-
-	hash := addr.ScriptAddress()
-
-	amountBuffer := make([]byte, 8)
-	binary.LittleEndian.PutUint64(amountBuffer, uint64(amount))
+	// Concatenate the prefix, pubkeyhash, and amount.
+	adBytes := make([]byte, 20+8+2)
+	copy(adBytes[0:20], addr.ScriptAddress())
+	binary.LittleEndian.PutUint64(adBytes[20:28], uint64(amount))
+	binary.LittleEndian.PutUint16(adBytes[28:30], limits)
 
 	// Set the bit flag indicating pay to script hash.
 	if scriptType == ScriptHashTy {
-		amountBuffer[7] |= 1 << 7
+		adBytes[27] |= 1 << 7
 	}
 
-	limitsBuffer := make([]byte, 2)
-	binary.LittleEndian.PutUint16(limitsBuffer, limits)
-
-	// Concatenate the prefix, pubkeyhash, and amount.
-	addrOut := append(dataPushes, hash...)
-	addrOut = append(addrOut, amountBuffer...)
-	addrOut = append(addrOut, limitsBuffer...)
-
-	return addrOut, nil
+	return NewScriptBuilder().AddOp(OP_RETURN).AddData(adBytes).Script()
 }
 
 // GenerateSSGenBlockRef generates an OP_RETURN push for the block header hash and
 // height which the block votes on.
-func GenerateSSGenBlockRef(blockHash chainhash.Hash, height uint32) ([]byte,
-	error) {
-	// Prefix
-	dataPushes := []byte{
-		0x6a, // OP_RETURN
-		0x24, // OP_DATA_36
-	}
-
+func GenerateSSGenBlockRef(blockHash chainhash.Hash, height uint32) ([]byte, error) {
 	// Serialize the block hash and height
-	blockHeightBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(blockHeightBytes, height)
+	brBytes := make([]byte, 32+4)
+	copy(brBytes[0:32], blockHash[:])
+	binary.LittleEndian.PutUint32(brBytes[32:36], height)
 
-	blockData := append(blockHash[:], blockHeightBytes...)
-
-	// Concatenate the prefix and block data
-	blockDataOut := append(dataPushes, blockData...)
-
-	return blockDataOut, nil
+	return NewScriptBuilder().AddOp(OP_RETURN).AddData(brBytes).Script()
 }
 
 // GenerateSSGenVotes generates an OP_RETURN push for the vote bits in an SSGen tx.
 func GenerateSSGenVotes(votebits uint16) ([]byte, error) {
-	// Prefix
-	dataPushes := []byte{
-		0x6a, // OP_RETURN
-		0x02, // OP_DATA_2
-	}
-
 	// Serialize the votebits
-	voteBitsBytes := make([]byte, 2)
-	binary.LittleEndian.PutUint16(voteBitsBytes, votebits)
+	vbBytes := make([]byte, 2)
+	binary.LittleEndian.PutUint16(vbBytes, votebits)
 
-	// Concatenate the prefix and vote bits
-	voteBitsOut := append(dataPushes, voteBitsBytes...)
-
-	return voteBitsOut, nil
+	return NewScriptBuilder().AddOp(OP_RETURN).AddData(vbBytes).Script()
 }
 
-// GenerateProvablyPruneableOut creates an OP_RETURN push of arbitrary data.
+// GenerateProvablyPruneableOut creates a provably-prunable script containing
+// OP_RETURN followed by the passed data.  An Error with the error code
+// ErrTooMuchNullData will be returned if the length of the passed data exceeds
+// MaxDataCarrierSize.
 func GenerateProvablyPruneableOut(data []byte) ([]byte, error) {
+	if len(data) > MaxDataCarrierSize {
+		str := fmt.Sprintf("data size %d is larger than max "+
+			"allowed size %d", len(data), MaxDataCarrierSize)
+		return nil, scriptError(ErrTooMuchNullData, str)
+	}
+
 	return NewScriptBuilder().AddOp(OP_RETURN).AddData(data).Script()
 }
 
@@ -1018,53 +999,62 @@ func PayToAddrScript(addr dcrutil.Address) ([]byte, error) {
 	switch addr := addr.(type) {
 	case *dcrutil.AddressPubKeyHash:
 		if addr == nil {
-			return nil, ErrUnsupportedAddress
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
 		switch addr.DSA(addr.Net()) {
-		case chainec.ECTypeSecp256k1:
+		case dcrec.STEcdsaSecp256k1:
 			return payToPubKeyHashScript(addr.ScriptAddress())
-		case chainec.ECTypeEdwards:
+		case dcrec.STEd25519:
 			return payToPubKeyHashEdwardsScript(addr.ScriptAddress())
-		case chainec.ECTypeSecSchnorr:
+		case dcrec.STSchnorrSecp256k1:
 			return payToPubKeyHashSchnorrScript(addr.ScriptAddress())
 		}
 
 	case *dcrutil.AddressScriptHash:
 		if addr == nil {
-			return nil, ErrUnsupportedAddress
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
 		return payToScriptHashScript(addr.ScriptAddress())
 
 	case *dcrutil.AddressSecpPubKey:
 		if addr == nil {
-			return nil, ErrUnsupportedAddress
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
 		return payToPubKeyScript(addr.ScriptAddress())
 
 	case *dcrutil.AddressEdwardsPubKey:
 		if addr == nil {
-			return nil, ErrUnsupportedAddress
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
 		return payToEdwardsPubKeyScript(addr.ScriptAddress())
 
 	case *dcrutil.AddressSecSchnorrPubKey:
 		if addr == nil {
-			return nil, ErrUnsupportedAddress
+			return nil, scriptError(ErrUnsupportedAddress,
+				nilAddrErrStr)
 		}
 		return payToSchnorrPubKeyScript(addr.ScriptAddress())
 	}
 
-	return nil, ErrUnsupportedAddress
+	str := fmt.Sprintf("unable to generate payment script for unsupported "+
+		"address type %T", addr)
+	return nil, scriptError(ErrUnsupportedAddress, str)
 }
 
 // MultiSigScript returns a valid script for a multisignature redemption where
 // nrequired of the keys in pubkeys are required to have signed the transaction
-// for success.  An ErrBadNumRequired will be returned if nrequired is larger
-// than the number of keys provided.
-func MultiSigScript(pubkeys []*dcrutil.AddressSecpPubKey, nrequired int) ([]byte,
-	error) {
+// for success.  An Error with the error code ErrTooManyRequiredSigs will be
+// returned if nrequired is larger than the number of keys provided.
+func MultiSigScript(pubkeys []*dcrutil.AddressSecpPubKey, nrequired int) ([]byte, error) {
 	if len(pubkeys) < nrequired {
-		return nil, ErrBadNumRequired
+		str := fmt.Sprintf("unable to generate multisig script with "+
+			"%d required signatures when there are only %d public "+
+			"keys available", nrequired, len(pubkeys))
+		return nil, scriptError(ErrTooManyRequiredSigs, str)
 	}
 
 	builder := NewScriptBuilder().AddInt64(int64(nrequired))
@@ -1142,7 +1132,7 @@ func ExtractPkScriptAddrs(version uint16, pkScript []byte,
 		// Skip the pubkey hash if it's invalid for some reason.
 		requiredSigs = 1
 		addr, err := dcrutil.NewAddressPubKeyHash(pops[2].data,
-			chainParams, chainec.ECTypeSecp256k1)
+			chainParams, dcrec.STEcdsaSecp256k1)
 		if err == nil {
 			addrs = append(addrs, addr)
 		}
@@ -1166,7 +1156,7 @@ func ExtractPkScriptAddrs(version uint16, pkScript []byte,
 		// Therefore the pubkey is the first item on the stack.
 		// Skip the pubkey if it's invalid for some reason.
 		requiredSigs = 1
-		pk, err := chainec.Secp256k1.ParsePubKey(pops[0].data)
+		pk, err := secp256k1.ParsePubKey(pops[0].data)
 		if err == nil {
 			addr, err := dcrutil.NewAddressSecpPubKeyCompressed(pk, chainParams)
 			if err == nil {
@@ -1184,10 +1174,10 @@ func ExtractPkScriptAddrs(version uint16, pkScript []byte,
 		var addr dcrutil.Address
 		err := fmt.Errorf("invalid signature suite for alt sig")
 		switch suite {
-		case chainec.ECTypeEdwards:
+		case dcrec.STEd25519:
 			addr, err = dcrutil.NewAddressEdwardsPubKey(pops[0].data,
 				chainParams)
-		case chainec.ECTypeSecSchnorr:
+		case dcrec.STSchnorrSecp256k1:
 			addr, err = dcrutil.NewAddressSecSchnorrPubKey(pops[0].data,
 				chainParams)
 		}
@@ -1262,7 +1252,7 @@ func ExtractPkScriptAddrs(version uint16, pkScript []byte,
 		// Extract the public keys while skipping any that are invalid.
 		addrs = make([]dcrutil.Address, 0, numPubKeys)
 		for i := 0; i < numPubKeys; i++ {
-			pubkey, err := chainec.Secp256k1.ParsePubKey(pops[i+1].data)
+			pubkey, err := secp256k1.ParsePubKey(pops[i+1].data)
 			if err == nil {
 				addr, err := dcrutil.NewAddressSecpPubKeyCompressed(pubkey,
 					chainParams)
@@ -1314,7 +1304,7 @@ func extractOneBytePush(po parsedOpcode) int {
 
 // ExtractPkScriptAltSigType returns the signature scheme to use for an
 // alternative check signature script.
-func ExtractPkScriptAltSigType(pkScript []byte) (int, error) {
+func ExtractPkScriptAltSigType(pkScript []byte) (dcrec.SignatureType, error) {
 	pops, err := parseScript(pkScript)
 	if err != nil {
 		return 0, err
@@ -1335,12 +1325,12 @@ func ExtractPkScriptAltSigType(pkScript []byte) (int, error) {
 	if valInt < 0 {
 		return 0, fmt.Errorf("bad type push")
 	}
-	val := sigTypes(valInt)
+	val := dcrec.SignatureType(valInt)
 	switch val {
-	case edwards:
-		return int(val), nil
-	case secSchnorr:
-		return int(val), nil
+	case dcrec.STEd25519:
+		return val, nil
+	case dcrec.STSchnorrSecp256k1:
+		return val, nil
 	default:
 		break
 	}
@@ -1348,27 +1338,12 @@ func ExtractPkScriptAltSigType(pkScript []byte) (int, error) {
 	return -1, fmt.Errorf("bad signature scheme type")
 }
 
-// GetNullDataContent returns the content of a NullData (OP_RETURN) data push
-// and an error if the script is not a NullData script.
-func GetNullDataContent(version uint16, pkScript []byte) ([]byte, error) {
-	class := GetScriptClass(version, pkScript)
-	if class != NullDataTy {
-		return nil, fmt.Errorf("not nulldata script")
-	}
-
-	pops, err := parseScript(pkScript)
-	if err != nil {
-		return nil, fmt.Errorf("script parse failure")
-	}
-
-	return pops[1].data, nil
-}
-
 // AtomicSwapDataPushes houses the data pushes found in atomic swap contracts.
 type AtomicSwapDataPushes struct {
 	RecipientHash160 [20]byte
 	RefundHash160    [20]byte
-	SecretHash       [20]byte
+	SecretHash       [32]byte
+	SecretSize       int64
 	LockTime         int64
 }
 
@@ -1389,41 +1364,55 @@ func ExtractAtomicSwapDataPushes(version uint16, pkScript []byte) (*AtomicSwapDa
 		return nil, err
 	}
 
-	if len(pops) != 17 {
+	if len(pops) != 20 {
 		return nil, nil
 	}
 	isAtomicSwap := pops[0].opcode.value == OP_IF &&
-		pops[1].opcode.value == OP_RIPEMD160 &&
-		pops[2].opcode.value == OP_DATA_20 &&
+		pops[1].opcode.value == OP_SIZE &&
+		canonicalPush(pops[2]) &&
 		pops[3].opcode.value == OP_EQUALVERIFY &&
-		pops[4].opcode.value == OP_DUP &&
-		pops[5].opcode.value == OP_HASH160 &&
-		pops[6].opcode.value == OP_DATA_20 &&
-		pops[7].opcode.value == OP_ELSE &&
-		canonicalPush(pops[8]) &&
-		pops[9].opcode.value == OP_CHECKLOCKTIMEVERIFY &&
-		pops[10].opcode.value == OP_DROP &&
-		pops[11].opcode.value == OP_DUP &&
-		pops[12].opcode.value == OP_HASH160 &&
-		pops[13].opcode.value == OP_DATA_20 &&
-		pops[14].opcode.value == OP_ENDIF &&
-		pops[15].opcode.value == OP_EQUALVERIFY &&
-		pops[16].opcode.value == OP_CHECKSIG
+		pops[4].opcode.value == OP_SHA256 &&
+		pops[5].opcode.value == OP_DATA_32 &&
+		pops[6].opcode.value == OP_EQUALVERIFY &&
+		pops[7].opcode.value == OP_DUP &&
+		pops[8].opcode.value == OP_HASH160 &&
+		pops[9].opcode.value == OP_DATA_20 &&
+		pops[10].opcode.value == OP_ELSE &&
+		canonicalPush(pops[11]) &&
+		pops[12].opcode.value == OP_CHECKLOCKTIMEVERIFY &&
+		pops[13].opcode.value == OP_DROP &&
+		pops[14].opcode.value == OP_DUP &&
+		pops[15].opcode.value == OP_HASH160 &&
+		pops[16].opcode.value == OP_DATA_20 &&
+		pops[17].opcode.value == OP_ENDIF &&
+		pops[18].opcode.value == OP_EQUALVERIFY &&
+		pops[19].opcode.value == OP_CHECKSIG
 	if !isAtomicSwap {
 		return nil, nil
 	}
 
 	pushes := new(AtomicSwapDataPushes)
-	copy(pushes.SecretHash[:], pops[2].data)
-	copy(pushes.RecipientHash160[:], pops[6].data)
-	copy(pushes.RefundHash160[:], pops[13].data)
-	if pops[8].data != nil {
-		locktime, err := makeScriptNum(pops[8].data, true, 5)
+	copy(pushes.SecretHash[:], pops[5].data)
+	copy(pushes.RecipientHash160[:], pops[9].data)
+	copy(pushes.RefundHash160[:], pops[16].data)
+	if pops[2].data != nil {
+		locktime, err := makeScriptNum(pops[2].data, 5)
+		if err != nil {
+			return nil, nil
+		}
+		pushes.SecretSize = int64(locktime)
+	} else if op := pops[2].opcode; isSmallInt(op) {
+		pushes.SecretSize = int64(asSmallInt(op))
+	} else {
+		return nil, nil
+	}
+	if pops[11].data != nil {
+		locktime, err := makeScriptNum(pops[11].data, 5)
 		if err != nil {
 			return nil, nil
 		}
 		pushes.LockTime = int64(locktime)
-	} else if op := pops[8].opcode; isSmallInt(op) {
+	} else if op := pops[11].opcode; isSmallInt(op) {
 		pushes.LockTime = int64(asSmallInt(op))
 	} else {
 		return nil, nil

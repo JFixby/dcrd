@@ -75,7 +75,7 @@ JSON-RPC API are:
 
 |   |HTTP POST Requests|Websockets|
 |---|------------------|----------|
-|Allows multiple requests across a single connection|No|Yes|
+|Allows multiple requests across a single connection|Yes|Yes|
 |Supports asynchronous notifications|No|Yes|
 |Scales well with large numbers of requests|No|Yes|
 
@@ -161,37 +161,39 @@ the method name for further details such as parameter and return information.
 |5|[getaddednodeinfo](#getaddednodeinfo)|N|Returns information about manually added (persistent) peers.|
 |6|[getbestblockhash](#getbestblockhash)|Y|Returns the hash of the of the best (most recent) block in the longest block chain.|
 |7|[getblock](#getblock)|Y|Returns information about a block given its hash.|
-|8|[getblockcount](#getblockcount)|Y|Returns the number of blocks in the longest block chain.|
-|9|[getblockhash](#getblockhash)|Y|Returns hash of the block in best block chain at the given height.|
-|10|[getblockheader](#getblockheader)|Y|Returns the block header of the block.|
-|11|[getconnectioncount](#getconnectioncount)|N|Returns the number of active connections to other peers.|
-|12|[getdifficulty](#getdifficulty)|Y|Returns the proof-of-work difficulty as a multiple of the minimum difficulty.|
-|13|[getgenerate](#getgenerate)|N|Return if the server is set to generate coins (mine) or not.|
-|14|[gethashespersec](#gethashespersec)|N|Returns a recent hashes per second performance measurement while generating coins (mining).|
-|15|[getinfo](#getinfo)|Y|Returns a JSON object containing various state info.|
-|16|[getmempoolinfo](#getmempoolinfo)|N|Returns a JSON object containing mempool-related information.|
-|17|[getmininginfo](#getmininginfo)|N|Returns a JSON object containing mining-related information.|
-|18|[getnettotals](#getnettotals)|Y|Returns a JSON object containing network traffic statistics.|
-|19|[getnetworkhashps](#getnetworkhashps)|Y|Returns the estimated network hashes per second for the block heights provided by the parameters.|
-|20|[getpeerinfo](#getpeerinfo)|N|Returns information about each connected network peer as an array of json objects.|
-|21|[getrawmempool](#getrawmempool)|Y|Returns an array of hashes for all of the transactions currently in the memory pool.|
-|22|[getrawtransaction](#getrawtransaction)|Y|Returns information about a transaction given its hash.|
-|23|[getwork](#getwork)|N|Returns formatted hash data to work on or checks and submits solved data.<br /><br />NOTE: Since dcrd does not have the wallet integrated to provide payment addresses, dcrd must be configured via the `--miningaddr` option to provide which payment addresses to pay created blocks to for this RPC to function.|
-|24|[help](#help)|Y|Returns a list of all commands or help for a specified command.|
-|25|[ping](#ping)|N|Queues a ping to be sent to each connected peer.|
-|26|[sendrawtransaction](#sendrawtransaction)|Y|Submits the serialized, hex-encoded transaction to the local peer and relays it to the network.<br /><br />NOTE: dcrd does not yet implement the `allowhighfees` parameter, so it has no effect|
-|27|[setgenerate](#setgenerate) |N|Set the server to generate coins (mine) or not.<br/>NOTE: Since dcrd does not have the wallet integrated to provide payment addresses, dcrd must be configured via the `--miningaddr` option to provide which payment addresses to pay created blocks to for this RPC to function.|
-|28|[stop](#stop)|N|Shutdown dcrd.|
-|29|[submitblock](#submitblock)|Y|Attempts to submit a new serialized, hex-encoded block to the network.|
-|30|[validateaddress](#validateaddress)|Y|Verifies the given address is valid.  NOTE: Since dcrd does not have a wallet integrated, dcrd will only return whether the address is valid or not.|
-|31|[verifychain](#verifychain)|N|Verifies the block chain database.|
-|32|[debuglevel](#debuglevel)|N|Dynamically changes the debug logging level.|
-|33|[getbestblock](#getbestblock)|Y|Get block height and hash of best block in the main chain.|
-|34|[getcurrentnet](#getcurrentnet)|Y|Get decred network dcrd is running on.|
-|35|[searchrawtransactions](#searchrawtransactions)|Y|Query for transactions related to a particular address.|
-|36|[node](#node)|N|Attempts to add or remove a peer. |
-|37|[generate](#generate)|N|When in simnet or regtest mode, generate a set number of blocks. |
-|38|[getstakeversions](#getstakeversions)|Y|Get stake versions per block. |
+|8|[getblockchaininfo](#getblockchaininfo)|Y|Returns information about the current state of the block chain.|
+|9|[getblockcount](#getblockcount)|Y|Returns the number of blocks in the longest block chain.|
+|10|[getblockhash](#getblockhash)|Y|Returns hash of the block in best block chain at the given height.|
+|11|[getblockheader](#getblockheader)|Y|Returns the block header of the block.|
+|12|[getchaintips](#getchaintips)|Y|Returns information about all known chain tips the in the block tree.|
+|13|[getconnectioncount](#getconnectioncount)|N|Returns the number of active connections to other peers.|
+|14|[getdifficulty](#getdifficulty)|Y|Returns the proof-of-work difficulty as a multiple of the minimum difficulty.|
+|15|[getgenerate](#getgenerate)|N|Return if the server is set to generate coins (mine) or not.|
+|16|[gethashespersec](#gethashespersec)|N|Returns a recent hashes per second performance measurement while generating coins (mining).|
+|17|[getinfo](#getinfo)|Y|Returns a JSON object containing various state info.|
+|18|[getmempoolinfo](#getmempoolinfo)|N|Returns a JSON object containing mempool-related information.|
+|19|[getmininginfo](#getmininginfo)|N|Returns a JSON object containing mining-related information.|
+|20|[getnettotals](#getnettotals)|Y|Returns a JSON object containing network traffic statistics.|
+|21|[getnetworkhashps](#getnetworkhashps)|Y|Returns the estimated network hashes per second for the block heights provided by the parameters.|
+|22|[getpeerinfo](#getpeerinfo)|N|Returns information about each connected network peer as an array of json objects.|
+|23|[getrawmempool](#getrawmempool)|Y|Returns an array of hashes for all of the transactions currently in the memory pool.|
+|24|[getrawtransaction](#getrawtransaction)|Y|Returns information about a transaction given its hash.|
+|25|[getwork](#getwork)|N|Returns formatted hash data to work on or checks and submits solved data.<br /><br />NOTE: Since dcrd does not have the wallet integrated to provide payment addresses, dcrd must be configured via the `--miningaddr` option to provide which payment addresses to pay created blocks to for this RPC to function.|
+|26|[help](#help)|Y|Returns a list of all commands or help for a specified command.|
+|27|[ping](#ping)|N|Queues a ping to be sent to each connected peer.|
+|28|[sendrawtransaction](#sendrawtransaction)|Y|Submits the serialized, hex-encoded transaction to the local peer and relays it to the network.<br /><br />NOTE: dcrd does not yet implement the `allowhighfees` parameter, so it has no effect|
+|29|[setgenerate](#setgenerate) |N|Set the server to generate coins (mine) or not.<br/>NOTE: Since dcrd does not have the wallet integrated to provide payment addresses, dcrd must be configured via the `--miningaddr` option to provide which payment addresses to pay created blocks to for this RPC to function.|
+|30|[stop](#stop)|N|Shutdown dcrd.|
+|31|[submitblock](#submitblock)|Y|Attempts to submit a new serialized, hex-encoded block to the network.|
+|32|[validateaddress](#validateaddress)|Y|Verifies the given address is valid.  NOTE: Since dcrd does not have a wallet integrated, dcrd will only return whether the address is valid or not.|
+|33|[verifychain](#verifychain)|N|Verifies the block chain database.|
+|34|[debuglevel](#debuglevel)|N|Dynamically changes the debug logging level.|
+|35|[getbestblock](#getbestblock)|Y|Get block height and hash of best block in the main chain.|
+|36|[getcurrentnet](#getcurrentnet)|Y|Get Decred network dcrd is running on.|
+|37|[searchrawtransactions](#searchrawtransactions)|Y|Query for transactions related to a particular address.|
+|38|[node](#node)|N|Attempts to add or remove a peer. |
+|39|[generate](#generate)|N|When in simnet or regtest mode, generate a set number of blocks. |
+|40|[getstakeversions](#getstakeversions)|Y|Get stake versions per block. |
 
 <a name="MethodDetails" />
 
@@ -213,10 +215,10 @@ the method name for further details such as parameter and return information.
 |   |   |
 |---|---|
 |Method|createrawtransaction|
-|Parameters|1. `transaction inputs`:  `(JSON array, required)` json array of json objects.<br />`hash`: `(string, required)` the hash of the input.</br> `vout`: (numeric, required) the specific output of the input transaction to redeem transaction.<br /><br />`[{"txid": "hash", "vout": n}, ...]`<br /><br />2. `addresses and amounts`: `(JSON object, required)` - json object with addresses as keys and amounts as values.</br>`address`:   `(numeric, required)` the address to send to as the key and the amount in DCR as the value.<br /><br />`{"address": n.nnn, ...}`|
+|Parameters|1. `transaction inputs`:  `(JSON array, required)` json array of json objects.</br> `amount`: `(numeric)` the previous output amount.<br />`hash`: `(string, required)` the hash of the input.</br> `vout`: (numeric, required) the specific output of the input transaction to redeem transaction.<br /><br />`[{"amount": n.nnn, "txid": "hash", "vout": n}, ...]`<br /><br />2. `addresses and amounts`: `(JSON object, required)` - json object with addresses as keys and output amounts as values.</br>`address`: `(string, required)` the address to send the specified output amount to.<br /><br />`{"address": n.nnn, ...}`|
 |Description|Returns a new transaction spending the provided inputs and sending to the provided addresses.The transaction inputs are not signed in the created transaction.<br /><br />The `signrawtransaction` RPC command provided by wallet must be used to sign the resulting transaction.|
 |Returns|`"transaction" (string) hex-encoded bytes of the serialized transaction`|
-|Example Parameters|1. transaction inputs `[{"txid":"e6da89de7a6b8508ce8f371a3d0535b04b5e108cb1a6e9284602d3bfd357c018", "vout":1}]`<br /><br />2. addresses and amounts ```{"13cgrTP7wgbZYWrY9BZ22BV6p82QXQT3nY": 0.49213337}```|
+|Example Parameters|1. transaction inputs `[{"amount":0.49213337, "txid":"e6da89de7a6b8508ce8f371a3d0535b04b5e108cb1a6e9284602d3bfd357c018", "vout":1}]`<br /><br />2. addresses and amounts ```{"13cgrTP7wgbZYWrY9BZ22BV6p82QXQT3nY": 0.49213337}```|
 |Example Return|Newlines added for display purposes.  The actual return does not contain newlines.<br />`010000000118c057d3bfd3024628e9a6b18c105e4bb035053d1a378fce08856b7ade89dae6010000`<br />`0000ffffffff0199efee02000000001976a9141cb013db35ecccc156fdfd81d03a11c51998f99388`<br />`ac00000000`|
 [Return to Overview](#MethodOverview)<br />
 
@@ -228,7 +230,7 @@ the method name for further details such as parameter and return information.
 |Method|decoderawtransaction|
 |Parameters|1. `data`: `(string, required)` serialized, hex-encoded transaction.|
 |Description|Returns a JSON object representing the provided serialized, hex-encoded transaction.|
-|Returns|`(json object)`<br />`txid`: `(string)` the transaction id. <br />`hash`: `(string)` the hash of the transaction. <br /> `locktime`: `(numeric)` the transaction lock time.<br />`version`: `(numeric)` the block version. <br />`expiry`: `(numeric)` the transaction expiry. <br />`vin`: `(array of json objects)` the transaction inputs as json objects.<br />`vout`: `(array of json objects)` the transaction outputs as json objects.<br /><br />`{"txid": "hash", "locktime": n, "version":n, "expiry": n, "vin": [...], "vout": [...]}`<br /><br />**vin (for coinbase transactions)**<br />`(json object)`<br /> `coinbase`: (string) the hex-encoded bytes of the signature script.<br />`sequence`: (numeric) the script sequence number.<br /><br />`{"coinbase": "data", "sequence": n, ...}`<br /><br />**vin (for stakebase transactions)**<br />`(json object)`<br /> `stakebase`: (string) the hash of the stake transaction.<br />`sequence`: (numeric) the script sequence number.<br /><br />`{"stakebase": "hash", "sequence": n, ...}`<br /><br />**vin (for non-coinbase / non-stakebase transactions)**<br />`(json object)`<br />`txid`: `(string)` the hash of the origin transaction.<br />`vout`: `(numeric)` the index of the output being redeemed from the origin transaction.<br />`scriptSig`: `(json object)` the signature script used to redeem the origin transaction.<br />`asm`:`(string)` disassembly of the script.<br />`data`: `(string)` hex-encoded bytes of the script.<br />`sequence`:  `(numeric)` the script sequence number.<br /><br />`{"txid": "hash", "vout": n,"scriptSig": {"asm": "asm", "hex": "data"}, "sequence": n, ...}`<br /><br />**vout**<br />`(json object)`<br />`value`: `(numeric)` the value in DCR.<br />`n`: `(numeric)` the index of this transaction output.<br />`scriptPubKey`:`(json object)` the public key script used to pay coins.<br />`asm`: `(string)` disassembly of the script.<br /> `hex`: `(string)` hex-encoded bytes of the script.<br /> `reqSigs`: `(numeric)` the number of required signatures.<br />`type`: `(string)` the type of the script (e.g. 'pubkeyhash').<br />`addresses`: `(json array of string)` the decred addresses associated with this output.<br /><br />`{ "value": n, "n": n, "scriptPubKey": {"asm": "asm", "hex": "data","reqSigs": n, "type": "scripttype","addresses": [...]}}`|
+|Returns|`(json object)`<br />`txid`: `(string)` the transaction id. <br />`hash`: `(string)` the hash of the transaction. <br /> `locktime`: `(numeric)` the transaction lock time.<br />`version`: `(numeric)` the block version. <br />`expiry`: `(numeric)` the transaction expiry. <br />`vin`: `(array of json objects)` the transaction inputs as json objects.<br />`vout`: `(array of json objects)` the transaction outputs as json objects.<br /><br />`{"txid": "hash", "locktime": n, "version":n, "expiry": n, "vin": [...], "vout": [...]}`<br /><br />**vin (for coinbase transactions)**<br />`(json object)`<br /> `coinbase`: (string) the hex-encoded bytes of the signature script.<br />`sequence`: (numeric) the script sequence number.<br /><br />`{"coinbase": "data", "sequence": n, ...}`<br /><br />**vin (for stakebase transactions)**<br />`(json object)`<br /> `stakebase`: (string) the hash of the stake transaction.<br />`sequence`: (numeric) the script sequence number.<br /><br />`{"stakebase": "hash", "sequence": n, ...}`<br /><br />**vin (for non-coinbase / non-stakebase transactions)**<br />`(json object)`<br />`txid`: `(string)` the hash of the origin transaction.<br />`vout`: `(numeric)` the index of the output being redeemed from the origin transaction.<br />`scriptSig`: `(json object)` the signature script used to redeem the origin transaction.<br />`asm`:`(string)` disassembly of the script.<br />`data`: `(string)` hex-encoded bytes of the script.<br />`sequence`:  `(numeric)` the script sequence number.<br /><br />`{"txid": "hash", "vout": n,"scriptSig": {"asm": "asm", "hex": "data"}, "sequence": n, ...}`<br /><br />**vout**<br />`(json object)`<br />`value`: `(numeric)` the value in DCR.<br />`n`: `(numeric)` the index of this transaction output.<br />`scriptPubKey`:`(json object)` the public key script used to pay coins.<br />`asm`: `(string)` disassembly of the script.<br /> `hex`: `(string)` hex-encoded bytes of the script.<br /> `reqSigs`: `(numeric)` the number of required signatures.<br />`type`: `(string)` the type of the script (e.g. 'pubkeyhash').<br />`addresses`: `(json array of string)` the Decred addresses associated with this output.<br /><br />`{ "value": n, "n": n, "scriptPubKey": {"asm": "asm", "hex": "data","reqSigs": n, "type": "scripttype","addresses": [...]}}`|
 |Example Return|**For coinbase transactions**<br />`{"txid": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b", "version": 1, "locktime": 0, "vin": [{"coinbase": "04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6...","sequence": 4294967295}, ...],"vout": [{"value": 50, "n": 0, "scriptPubKey": {"asm": "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4ce...","hex": "4104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4...", "reqSigs": 1,"type": "pubkey","addresses": ["1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", ...]}}]}`<br /><br />**For stakebase transactions**<br />`{"txid": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b", "version": 1, "locktime": 0, "vin": [{"stakebase": "60ac4b057247b3d0b9a8173de56b5e1be8c1d1da970511c626ef53706c66be04","sequence": 4294967295}, ...],"vout": [{"value": 50, "n": 0, "scriptPubKey": {"asm": "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4ce...","hex": "4104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4...", "reqSigs": 1,"type": "pubkey","addresses": ["1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", ...]}}]}`<br /><br />**For non-coinbase / non-stakebase transactions**<br />`{"txid": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b", "version": 1, "locktime": 0, "vin": [{"txid": "60ac4b057247b3d0b9a8173de56b5e1be8c1d1da970511c626ef53706c66be04", "vout": 0, "scriptSig": {"asm": "3046022100cb42f8df44eca83dd0a727988dcde9384953e830b1f8004d57485e2ede1b9c8f0...", "hex": "493046022100cb42f8df44eca83dd0a727988dcde9384953e830b1f8004d57485e2ede1b9c8...",},"sequence": 4294967295}, ...],"vout": [{"value": 50, "n": 0, "scriptPubKey": {"asm": "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4ce...","hex": "4104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4...", "reqSigs": 1,"type": "pubkey","addresses": ["1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", ...]}}]}`|
 [Return to Overview](#MethodOverview)<br />
 ***
@@ -239,7 +241,7 @@ the method name for further details such as parameter and return information.
 |Method|decodescript|
 |Parameters|1. `script`: `(string, required)` hex-encoded script.|
 |Description|Returns a JSON object with information about the provided hex-encoded script.|
-|Returns|`(json object)`<br />`asm`: `(string)` disassembly of the script (absent for nonstandard scripts).<br />`reqSigs`: `(numeric)` the number of required signatures.<br />`type`: `(string)` the type of the script (e.g. 'pubkeyhash').<br />`addresses`: `(json array of string)` the decred addresses associated with this script.<br />`p2sh`: `(string)` the script hash for use in pay-to-script-hash transactions.<br /><br />`{ "asm": "asm", "reqSigs": n, "type": "scripttype", "addresses": [...], "p2sh": "scripthash"}`|
+|Returns|`(json object)`<br />`asm`: `(string)` disassembly of the script (absent for nonstandard scripts).<br />`reqSigs`: `(numeric)` the number of required signatures.<br />`type`: `(string)` the type of the script (e.g. 'pubkeyhash').<br />`addresses`: `(json array of string)` the Decred addresses associated with this script.<br />`p2sh`: `(string)` the script hash for use in pay-to-script-hash transactions.<br /><br />`{ "asm": "asm", "reqSigs": n, "type": "scripttype", "addresses": [...], "p2sh": "scripthash"}`|
 |Example Return|`{"asm": "OP_DUP OP_HASH160 b0a4d8a91981106e4ed85165a66748b19f7b7ad4 OP_EQUALVERIFY OP_CHECKSIG", "reqSigs": 1, "type": "pubkeyhash", "addresses": ["1H71QVBpzuLTNUh5pewaH3UTLTo2vWgcRJ"], "p2sh": "359b84ff799f48231990ff0298206f54117b08b6"}`|
 [Return to Overview](#MethodOverview)<br />
 
@@ -278,10 +280,9 @@ the method name for further details such as parameter and return information.
 |Parameters|1. `block hash`: `(string, required)` the hash of the block.<br />2. `verbose`: `(boolean, optional, default=true)` specifies the block is returned as a JSON object instead of hex-encoded string.<br />3. `verbosetx`: `(boolean, optional, default=false)` specifies that each transaction is returned as a JSON object and only applies if the `verbose` flag is true.|
 |Description|Returns information about a block given its hash.|
 |Returns (verbose=false)|`"data" (string) hex-encoded bytes of the serialized block`|
-|Returns (verbose=true, verbosetx=false)| `(json object)`<br />`hash`: `(string)` the hash of the block (same as provided).<br />`confirmations`: `(numeric)` the number of confirmations.<br />`size`: `(numeric)` the size of the block.<br />`height`: `(numeric)` the height of the block in the block chain.<br />`version`: `(numeric)` the block version.<br />`merkleroot`: (string) root hash of the merkle tree.<br />`stakeroot`: `(string)` root hash of the stake tree.<br />`tx`: `(json array of string)` the transaction hashes.<br />`stx`: `(json array of string)` the stake transaction hashes.<br />`transactionhash`: `(string)` hash of the parent transaction.<br />`time`: `(numeric)` the block time in seconds since 1 Jan 1970 GMT.<br />`nonce`: `(numeric)` the block nonce.<br />`bits`: `(numeric)` the bits which represent the block difficulty.<br />`sbits`: `(numeric)` the bits which represent the stake difficulty<br />`revocations`: `(numeric)` the number of nullified tickets.<br />`difficulty`: `(numeric)` the proof-of-work difficulty as a multiple of the minimum difficulty.<br />`previousblockhash`: `(string)` the hash of the previous block.<br />`nextblockhash`: `(string)` the hash of the next block.<br /><br />`{"hash": "blockhash","confirmations": n, "size": n, "height": n,"version": n, "merkleroot": "hash","tx": ["transactionhash", ...],"stx": ["transactionhash", ...],"time": n, "revocations": n, "nonce": n,  "bits": n, "difficulty": n.nn, "previousblockhash": "hash", "nextblockhash": "hash", ...}`
-|Returns (verbose=true, verbosetx=true)|`(json object)`<br />`hash`: (string) the hash of the block (same as provided)<br />`confirmations`: `(numeric)` the number of confirmations.<br />`size`: `(numeric)` the size of the block.<br />`height`: `(numeric)` the height of the block in the block chain.<br />`version`: `(numeric)` the block version.<br />`merkleroot`: `(string)` root hash of the merkle tree.<br />`rawtx`: `(array of json objects)` the transactions as json objects.<br />`tx`: `(json array of string)` the transaction hashes.<br />`stx`: `(json array of string)` the stake transaction hashes.<br />`transactionhash`: `(string)` hash of the parent transaction.<br />`time`: `(numeric)` the block time in seconds since 1 Jan 1970 GMT.<br />`nonce`: `(numeric)` the block nonce.<br />`bits`: `(numeric)` the bits which represent the block difficulty.<br />`revocations`: `(numeric)` the number of nullified tickets.<br />`difficulty`: `(numeric)` the proof-of-work difficulty as a multiple of the minimum difficulty.<br />`previousblockhash`: `(string)` the hash of the previous block.<br />`nextblockhash`: `(string)` the hash of the next block.<br /><br />`{"hash": "blockhash","confirmations": n, "size": n, "height": n,"version": n, "merkleroot": "hash", "rawtx":[...], "tx": ["transactionhash", ...], "tx": ["transactionhash", ...],"time": n, "revocations": n, "nonce": n,  "bits": n, "difficulty": n.nn, "previousblockhash": "hash", "nextblockhash": "hash", ...}`|
-|Example Return (verbose=false)|Newlines added for display purposes. The actual return does not contain newlines.<br/> `"010000000000000000000000000000000000000000000000000000000000000000000000`<br />`3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49`<br />`ffff001d1dac2b7c01010000000100000000000000000000000000000000000000000000`<br />`00000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f`<br />`4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f`<br />`6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104`<br />`678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f`<br />`4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000"`<br />|
-|Example Return (verbose=true, verbosetx=false)|`"hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f", "confirmations": 277113,"size": 285, "height": 0, "version": 1, "merkleroot": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b", "tx": ["4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b", ...], "stx": ["4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f", ...], "time": 1231006505, "nonce": 2083236893, "bits": "1d00ffff", "difficulty": 1, "previousblockhash": "0000000000000000000000000000000000000000000000000000000000000000", "nextblockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048", ...}`|
+|Returns (verbose=true, verbosetx=false)|`(json object)`<br />`hash`: `(string)` the hash of the block (same as provided).<br />`confirmations`: `(numeric)` the number of confirmations.<br />`size`: `(numeric)` the size of the block.<br />`height`: `(numeric)` the height of the block in the block chain.<br />`version`: `(numeric)` the block version.<br />`merkleroot`: `(string)` root hash of the merkle tree.<br />`stakeroot`: `(string)` root hash of the stake tree.<br />`tx`: `(json array of string)` the transaction hashes.<br />`stx`: `(json array of string)` the stake transaction hashes.<br />`time`: `(numeric)` the block time in seconds since 1 Jan 1970 GMT.<br />`nonce`: `(numeric)` the block nonce.<br />`votebits`: `(numeric)` the block voting results.<br />`finalstate`: `(string)` the final lottery state.<br />`voters`: `(numeric)` the number of votes.<br />`freshstake`: `(numeric)` the number of ticket purchases.<br />`revocations`: `(numeric)` the number of ticket revocations.<br />`poolsize`: `(numeric)` the total number of valid spendble tickets as of the block.<br />`bits`: `(numeric)` the bits which represent the block difficulty.<br />`sbits`: `(numeric)` the bits which represent the stake difficulty.<br />`difficulty`: `(numeric)` the proof-of-work difficulty as a multiple of the minimum difficulty.<br />`chainwork`: `(string)` the total number of hashes expected to produce the chain up to the block in hex.<br />`extradata`: `(string)` extra data for the block including the extra nonce used by proof-of-work miners.<br />`stakeversion`: `(string)` block stake version.<br />`previousblockhash`: `(string)` the hash of the previous block.<br />`nextblockhash`: `(string)` the hash of the next block (only if there is one).<br /><br />`{"hash": "blockhash", "confirmations": n, "size": n, "height": n, "version": n, "merkleroot": "hash", "stakeroot": "hash", "tx": ["transactionhash", ...], "stx": ["transactionhash", ...], "time": n, "nonce": n, "votebits": n, "finalstate": "state", "voters": n, "freshstake": n, "revocations": n, "poolsize": n, "bits": n, "sbits": n.nn, "difficulty": n.nn, "chainwork": "workhex", "extradata": "data", "stakeversion": n, previousblockhash": "hash", "nextblockhash": "hash"}`|
+|Example Return (verbose=false)|Newlines added for display purposes. The actual return does not contain newlines.<br/> `"01000000b926d1870d6f88760a8b10db0d4439e5cd74f3827fd4b6827443000000000000`<br />`35cade3c4cd99e7547d1dffe8474855dd363dff69b395428810466c985d067c800000000`<br />`000000000000000000000000000000000000000000000000000000000100000000000000`<br />`0000000000000000ffff011b00c2eb0b00000000020000007e01000080d8b856bac0f231`<br />`c84e3a6b6ad536d301000000000000000000000000000000000000000000000000000000`<br />`010100000001000000000000000000000000000000000000000000000000000000000000`<br />`0000ffffffff00ffffffff03fa1a981200000000000017a914f5916158e3e2c4551c1796`<br />`708db8367207ed13bb8700000000000000000000266a2402000000000000000000000000`<br />`000000000000000000000000000000ffa310d9a6a9588edea1906f0000000000001976a9`<br />`148ffe7a49ecf0f4858e7a52155302177398d2296988ac000000000000000001d8bc2882`<br />`0000000000000000ffffffff0800002f646372642f00"`<br />|
+|Example Return (verbose=true, verbosetx=false)|`"hash": "000000000000c41019872ff7db8fd2e9bfa05f42d3f8fee8e895e8c1e5b8dcba", "confirmations": 283285,"size": 382, "height": 2, "version": 1, "merkleroot": "c867d085c96604812854399bf6df63d35d857484fedfd147759ed94c3cdeca35", "stakeroot": "000000000000000000000000000000000000000000000000000000000000000", tx": ["ba8d2fcb5c705a1e5cbeda0db9dd30a521e360efd3aef75e862b2b69e0a673af", ...], "time": 1454954624, "nonce": 837992634, "votebits": 1, "finalstate": "000000000000", "voters": 0, "freshstake": 0, "revocations": 0, "poolsize": 0, "bits": "1d00ffff", "sbits": 2, "difficulty": 32767.74999809, "chainwork": "00000000000000000000000000000000000000000000000000018000c0006000", "extradata": "c84e3a6b6ad536d3010000000000000000000000000000000000000000000000", "stakeversion": 0, "previousblockhash": "000000000000437482b6d47f82f374cde539440ddb108b0a76886f0d87d126b9", "nextblockhash": "00000000000108ac3e3f51a0f4424dd757a3b0485da0ec96592f637f27bd1cf5"}`|
 [Return to Overview](#MethodOverview)<br />
 
 ***
@@ -317,9 +318,33 @@ the method name for further details such as parameter and return information.
 |Parameters|1.  `block hash`: `(string, required)` the hash of the block.<br />2. `verbose`: `(boolean, optional, default=true)` specifies the block header is returned as a JSON object instead of a hex-encoded string.|
 |Description|Returns hex-encoded bytes of the serialized block header.|
 |Returns (verbose=false)|`"data" (string) hex-encoded bytes of the serialized block`|
-|Returns (verbose=true)|`(json object)`<br />`hash`: `(string)` the hash of the block (same as provided).<br />`confirmations`: `(numeric)` the number of confirmations.<br />`height`: `(numeric)` the height of the block in the block chain.<br />`version`: `(numeric)` the block version.<br />`merkleroot`:  `(string)` root hash of the merkle tree.<br />`stakeroot`:  `(string)` root hash of the stake tree.<br />`time`: `(numeric)` the block time in seconds since 1 Jan 1970 GMT<br />`nonce`: (numeric) the block nonce.<br />`bits`: `(numeric)` the bits which represent the block difficulty.<br />`sbits`: `(numeric)` the bits which represent the stake difficulty.<br />`difficulty`: `(numeric)` the proof-of-work difficulty as a multiple of the minimum difficulty.<br />`previousblockhash`: `(string)` the hash of the previous block.<br />`nextblockhash`: `(string)` the hash of the next block (only if there is one).<br /><br />`{"hash": "blockhash", "confirmations": n, "height": n, "version": n,  "merkleroot": "hash", "stakeroot": "hash", "time": n, "nonce": n, "bits": n, "sbits": n, "difficulty": n.nn,  "previousblockhash": "hash", "nextblockhash": "hash"}`|
-|Example Return (verbose=false)|Newlines added for display purposes.  The actual return does not contain newlines.<br />`"0200000035ab154183570282ce9afc0b494c9fc6a3cfea05aa8c1add2ecc564900000000`<br />`38ba3d78e4500a5a7570dbe61960398add4410d278b21cd9708e6d9743f374d544fc0552`<br />`27f1001c29c1ea3b"`|
-|Example Return (verbose=true)|`{"hash": "00000000009e2958c15ff9290d571bf9459e93b19765c6801ddeccadbb160a1e", "confirmations": 392076, "height": 100000, "version": 2, "merkleroot": "d574f343976d8e70d91cb278d21044dd8a396019e6db70755a0a50e4783dba38", "stakeroot":"b4765ae7d5bf4768ff7c4372d55abb7894b2bd9d3f48f7437115502b0bcc47e7", "time": 1376123972, "nonce": 1005240617, "bits": "1c00f127", "sbits": 68, "difficulty": 271.75767393, "previousblockhash": "000000004956cc2edd1a8caa05eacfa3c69f4c490bfc9ace820257834115ab35",  "nextblockhash": "0000000000629d100db387f37d0f37c51118f250fb0946310a8c37316cbc4028", ...}`|
+|Returns (verbose=true)|`(json object)`<br />`hash`: `(string)` the hash of the block (same as provided).<br />`confirmations`: `(numeric)` the number of confirmations.<br />`version`: `(numeric)` the block version.<br />`merkleroot`: `(string)` root hash of the merkle tree.<br />`stakeroot`: `(string)` root hash of the stake tree.<br />`votebits`: `(numeric)` the block voting results.<br />`finalstate`: `(string)` the final lottery state.<br />`voters`: `(numeric)` the number of votes.<br />`freshstake`: `(numeric)` the number of ticket purchases.<br />`revocations`: `(numeric)` the number of ticket revocations.<br />`poolsize`: `(numeric)` the total number of valid spendble tickets as of the block.<br />`bits`: `(numeric)` the bits which represent the block difficulty.<br />`sbits`: `(numeric)` the bits which represent the stake difficulty.<br />`height`: `(numeric)` the height of the block in the block chain.<br />`size`: `(numeric)` the size of the block.<br />`time`: `(numeric)` the block time in seconds since 1 Jan 1970 GMT.<br />`nonce`: `(numeric)` the block nonce.<br />`extradata`: `(string)` extra data for the block including the extra nonce used by proof-of-work miners.<br />`stakeversion`: `(string)` block stake version.<br />`difficulty`: `(numeric)` the proof-of-work difficulty as a multiple of the minimum difficulty.<br />`chainwork`: `(string)` the total number of hashes expected to produce the chain up to the block in hex.<br />`previousblockhash`: `(string)` the hash of the previous block.<br />`nextblockhash`: `(string)` the hash of the next block (only if there is one).<br /><br />`{"hash": "blockhash", "confirmations": n, "version": n, "merkleroot": "hash", "stakeroot": "hash", "votebits": n, "finalstate": "state", "voters": n, "freshstake": n, "revocations": n, "poolsize": n, "bits": n, "sbits": n.nn, "height": n, "size": n, "time": n, "nonce": n, "extradata": "data", "stakeversion": n, "difficulty": n.nn, "chainwork": "workhex", "previousblockhash": "hash", "nextblockhash": "hash"}`|
+|Example Return (verbose=false)|Newlines added for display purposes.  The actual return does not contain newlines.<br />`"0100000094f455952f88b4ff019c6673f3f01541b76e700e0c8a2ab9da00000000000000`<br />`266b9d4672f099e2b36c7adcede6564ee7326ac02b757b065e4a7c69efa44925825ccc8e`<br />`9602af73d03e54ea1ac717f712c869440a1762375f64b9fe3ae2409f01008b736885bab7`<br />`0500000047a60000b494111a6688f80402000000a0860100600c000000a081585ab58b03`<br />`360000000024680140d1ec18000000000000000000000000000000000000000000000000"`|
+|Example Return (verbose=true)|`{"hash": "00000000000004289d9a7b0f7a332fb60a1c221faae89a107ce3ab93eead2f93", "confirmations": 183291, "version": 1, "merkleroot": "2549a4ef697c4a5e067b752bc06a32e74e56e6eddc7a6cb3e299f072469d6b26", "stakeroot":"9f40e23afeb9645f3762170a4469c812f717c71aea543ed073af02968ecc5c82", "votebits": 1, "finalstate": "8b736885bab7", "voters": 5, "freshstake": 0, "revocations": 0, "poolsize": 42567, "bits": "1a1194b4", "sbits": 86.73331302, "height": 100000, "size": 3168, "time": 1484890112, "nonce": 59487578, "stakeversion": 0, "difficulty": 954273.50809769, "chainwork": "00000000000000000000000000000000000000000000001060ad4432c4d6eff1", "previousblockhash": "00000000000000dab92a8a0c0e706eb74115f0f373669c01ffb4882f9555f494",  "nextblockhash": "0000000000000578b08f22fd2bdf5f7fe5b0af1bb4928de5053a3f906b3c8f6b"}`|
+[Return to Overview](#MethodOverview)<br />
+
+***
+<a name="getchaintips"/>
+
+|   |   |
+|---|---|
+|Method|getchaintips|
+|Parameters|None|
+|Description|Returns about all known chain tips the in the block tree.<br /><br />The statuses in the result have the following meanings:<br /><br />`active`: The current best chain tip.<br />`invalid`: The block or one of its ancestors is invalid.<br />`headers-only`: The block or one of its ancestors does not have the full block data available which also means the block can't be validated or connected.<br />`valid-fork`: The block is fully validated which implies it was probably part of the main chain at one point and was reorganized.<br />`valid-headers`: The full block data is available and the header is valid, but the block was never validated which implies it was probably never part of the main chain.|
+|Returns|`(json array of objects)`<br />`height`: `(numeric)` The height of the chain tip.<br />`hash`: `(string)` The block hash of the chain tip.<br />`branchlen`: `(numeric)` The length of the branch that connects the tip to the main chain (0 for the main chain tip).<br />`status`: `(string)`  status of the chain (active, invalid, headers-only, valid-fork, valid-headers).<br /><br />`[{"height": n, "hash": "hash", "branchlen": n, "status": "status"}, ...]`|
+|Example Return|`[{"height": 217033, "hash": "00000000000000161bd5b120ef945faad60fc6e4c32b5caf1d4cabeae9a75346", "branchlen": 0, "status": "active"}, {"height": 213522, "hash": "0000000000000015e27658ce02ba8fa05d8d7ad9c587a5a472e3307773a9b36e", "branchlen": 1, "status": "valid-fork"}]"`|
+[Return to Overview](#MethodOverview)<br />
+
+***
+<a name="getblockchaininfo"/>
+
+|   |   |
+|---|---|
+|Method|getblockchaininfo|
+|Parameters|None|
+|Description|Returns information about the current state of the block chain.|
+|Returns|`(json object)`<br />`chain`: `(string)` The current network name.<br />`blocks`: `(numeric)` The number of blocks in the current best chain.<br />`headers`: `(numeric)` The number of validated block headers that comprise the target best chain.<br />`syncheight`: `(numeric)` The latest known block height being synced to.<br />`bestblockhash`: `(string)` The block hash of the current best chain tip.<br />`difficulty`: `(numeric)` The current network difficulty.<br />`verificationprogress`: `(numeric)` The chain verification progress estimate.<br />`chainwork`: `(string)` Hex encoded total work done for the chain.<br />`initialblockdownload`: `(boolean)` Best guess of whether this node is in the initial block download mode used to catch up the chain when it is far behind.<br />`maxblocksize`: `(numeric)` The maximum allowed block size.<br />`deployments`: `(json array of objects)` Network consensus deployments.<br />`status`: `(string)` The deployment agenda's current status.<br />`since`: `(numeric)` The blockheight of the first block to which the status applies.<br />`starttime`: `(numeric)` The start time of the voting period for the agenda.<br />`expiretime`: `(numeric)` The expiry time of the voting period for the agenda.<br /><br />`{ "chain": "name", "blocks": n, "headers": n, "syncheight": n, "bestblockhash": "hash", "difficulty": n, "verificationprogress": n, "chainwork": "n", "initialblockdownload": bool, "maxblocksize": n, "deployments": {"agenda": { "status": "status", "since": n, "starttime": n, "expiretime": n}, ...}}`|
+|Example Return|`{"chain": "simnet", "blocks": 463, "headers": 463, "syncheight": 0, "bestblockhash": "000043c89f6e227c9d90a5460aff98b662e503b9a394818942bdd60709cbb8aa", "difficulty": 520127421, "verificationprogress": 0, "chainwork": "0x23c0e40", "initialblockdownload": false, "maxblocksize": 1000000, "deployments": {"lnfeatures": {"status": "started", "since": 463, "starttime": 0, "expiretime": 9223372036854775807}, "maxblocksize": {"status": "started", "since": 463, "starttime": 0, "expiretime": 9223372036854775807}, "sdiffalgorithm": {"status": "started", "since": 463, "starttime": 0, "expiretime": 9223372036854775807}}}`|
 [Return to Overview](#MethodOverview)<br />
 
 ***
@@ -449,7 +474,7 @@ the method name for further details such as parameter and return information.
 |Parameters|1. `transaction hash`: `(string, required)` the hash of the transaction.<br />2. `verbose`: `(int, optional, default=0)` specifies the transaction is returned as a JSON object instead of hex-encoded string.|
 |Description|Returns information about a transaction given its hash.|
 |Returns (verbose=0)|`"data" (string) hex-encoded bytes of the serialized transaction`|
-|Returns (verbose=1)|`(json object)`<br />`hex`: `(string)` hex-encoded transaction / hex-encoded bytes of the script.<br />`txid`: `(string)` the hash of the transaction.<br />`version`: `(numeric)` the transaction version.<br />`locktime`: `(numeric)` the transaction lock time.<br />`vin`: `(array of json objects)` the transaction inputs as json objects.<br />`coinbase`: `(string)` the hex-encoded bytes of the signature script.<br />`stakebase`: `(string)` the hash of the stake transaction.<br />`sequence`: `(numeric)` the script sequence number.<br />`txid`: `(string)` the hash of the origin transaction.<br />`vout`: `(numeric)` the index of the output being redeemed from the origin transaction.<br />`scriptSig`: `(json object)` the signature script used to redeem the origin transaction.<br />`asm`: `(string)` disassembly of the script.<br />`sequence`: `(numeric)` the script sequence number.<br />`vout`: `(array of json objects)` the transaction outputs as json objects.<br />`value`: `(numeric)` the value in DCR.<br />`n`: `(numeric)` the index of this transaction output.<br />`scriptPubKey`: `(json object)` the public key script used to pay coins.<br />`reqSigs`: `(numeric)` the number of required signatures.<br />`type`: `(string)` the type of the script (e.g. 'pubkeyhash').<br />`addresses`: `(json array of string)` the decred addresses associated with this output.<br />`decredaddress`:  `(string)` the decred address<br /><br />**For coinbase transactions**<br />`{"hex": "data", "txid": "hash", "version": n, "locktime": n, "vin": [{ "coinbase": "data", "sequence": n}, ...], "vout": [{"value": n, "n": n,"scriptPubKey": { "asm": "asm","hex": "data", "reqSigs": n,"type": "scripttype", "addresses": [ "decredaddress", ...]}}, ...]}`<br /><br />**For stakebase transactions**<br />`{"hex": "data", "txid": "hash", "version": n, "locktime": n, "vin": [{ "stakebase": "hash", "sequence": n}, ...], "vout": [{"value": n, "n": n,"scriptPubKey": { "asm": "asm","hex": "data", "reqSigs": n,"type": "scripttype", "addresses": [ "decredaddress", ...]}}, ...]}`<br /><br />**For non-coinbase / non-stakebase transactions**<br />`{"hex": "data", "txid": "hash", "version": n, "locktime": n, "vin": [{"txid": "hash","vout": n, "scriptSig": {"asm": "asm", "hex": "data"}, "sequence": n}, ...], "vout": [{"value": n, "n": n,"scriptPubKey": { "asm": "asm","hex": "data", "reqSigs": n,"type": "scripttype", "addresses": [ "decredaddress", ...]}}, ...]}`|
+|Returns (verbose=1)|`(json object)`<br />`hex`: `(string)` hex-encoded transaction / hex-encoded bytes of the script.<br />`txid`: `(string)` the hash of the transaction.<br />`version`: `(numeric)` the transaction version.<br />`locktime`: `(numeric)` the transaction lock time.<br />`expiry`: `(numeric)` the transaction expiry.<br />`vin`: `(array of json objects)` the transaction inputs as json objects.<br />`coinbase`: `(string)` the hex-encoded bytes of the signature script.<br />`stakebase`: `(string)` the hash of the stake transaction.<br />`sequence`: `(numeric)` the script sequence number.<br />`txid`: `(string)` the hash of the origin transaction.<br />`vout`: `(numeric)` the index of the output being redeemed from the origin transaction.<br />`scriptSig`: `(json object)` the signature script used to redeem the origin transaction.<br />`asm`: `(string)` disassembly of the script.<br />`sequence`: `(numeric)` the script sequence number.<br />`vout`: `(array of json objects)` the transaction outputs as json objects.<br />`value`: `(numeric)` the value in DCR.<br />`n`: `(numeric)` the index of this transaction output.<br />`scriptPubKey`: `(json object)` the public key script used to pay coins.<br />`reqSigs`: `(numeric)` the number of required signatures.<br />`type`: `(string)` the type of the script (e.g. 'pubkeyhash').<br />`addresses`: `(json array of string)` the Decred addresses associated with this output.<br />`decredaddress`:  `(string)` the Decred address<br />`blockhash`:  `(string)` the hash of the block that contains the transaction.<br />`blockheight`:  `(numeric)` the height of the block that contains the transaction.<br />`blockindex`:  `(numeric)` the index within the array of transactions contained by the block.<br />`confirmations`:  `(numeric)` number of confirmations.<br />`time`: `(numeric)` transaction time in seconds since the epoch.<br />`blocktime`:  `(numeric)` block time in seconds since the epoch.<br /><br />**For coinbase transactions**<br />`{"hex": "data", "txid": "hash", "version": n, "locktime": n, "expiry": n, vin": [{ "coinbase": "data", "sequence": n}, ...], "vout": [{"value": n, "n": n,"scriptPubKey": { "asm": "asm","hex": "data", "reqSigs": n,"type": "scripttype", "addresses": [ "decredaddress", ...]}}, ...], "blockhash": "hash", "blockheight": n, "confirmations": n, "blocktime": n}`<br /><br />**For stakebase transactions**<br />`{"hex": "data", "txid": "hash", "version": n, "locktime": n, "expiry": n, "vin": [{ "stakebase": "hash", "sequence": n}, ...], "vout": [{"value": n, "n": n,"scriptPubKey": { "asm": "asm","hex": "data", "reqSigs": n,"type": "scripttype", "addresses": [ "decredaddress", ...]}}, ...], "blockhash": "hash", "blockheight": n,  "blockindex": n, "confirmations": n, "time": n, blocktime": n}`<br /><br />**For non-coinbase / non-stakebase transactions**<br />`{"hex": "data", "txid": "hash", "version": n, "locktime": n, "expiry": n, "vin": [{"txid": "hash","vout": n, "scriptSig": {"asm": "asm", "hex": "data"}, "sequence": n}, ...], "vout": [{"value": n, "n": n,"scriptPubKey": { "asm": "asm","hex": "data", "reqSigs": n,"type": "scripttype", "addresses": [ "decredaddress", ...]}}, ...], "blockhash": "hash", "blockheight": n,  "blockindex": n, "confirmations": n, "time": n, "blocktime": n}`|
 |Example Return (verbose=0)|Newlines added for display purposes.  The actual return does not contain newlines.<br />`"010000000104be666c7053ef26c6110597dad1c1e81b5e6be53d17a8b9d0b34772054bac60000000`<br />`008c493046022100cb42f8df44eca83dd0a727988dcde9384953e830b1f8004d57485e2ede1b9c8f`<br />`022100fbce8d84fcf2839127605818ac6c3e7a1531ebc69277c504599289fb1e9058df0141045a33`<br />`76eeb85e494330b03c1791619d53327441002832f4bd618fd9efa9e644d242d5e1145cb9c2f71965`<br />`656e276633d4ff1a6db5e7153a0a9042745178ebe0f5ffffffff0280841e00000000001976a91406`<br />`f1b6703d3f56427bfcfd372f952d50d04b64bd88ac4dd52700000000001976a9146b63f291c295ee`<br />`abd9aee6be193ab2d019e7ea7088ac00000000`|
 |Example Return (verbose=1)|**For coinbase transactions**<br />`{"hex": "01000000010000000000000000000000000000000000000000000000000000000000000000f...","txid": "90743aad855880e517270550d2a881627d84db5265142fd1e7fb7add38b08be9","version": 1,"locktime": 0,"vin": [{"coinbase": "03708203062f503253482f04066d605108f800080100000ea2122f6f7a636f696e4065757374726174756d2f","sequence": 0},...], "vout": [{"value": 25.1394,"n": 0, "scriptPubKey": {"asm": "OP_DUP OP_HASH160 ea132286328cfc819457b9dec386c4b5c84faa5c OP_EQUALVERIFY OP_CHECKSIG", "hex": "76a914ea132286328cfc819457b9dec386c4b5c84faa5c88ac", "reqSigs": 1, "type": "pubkeyhash", "addresses": ["1NLg3QJMsMQGM5KEUaEu5ADDmKQSLHwmyh", ...]}}, ...]}`<br /><br />**For stakebase transactions**<br />`{"hex": "01000000010000000000000000000000000000000000000000000000000000000000000000f...","txid": "90743aad855880e517270550d2a881627d84db5265142fd1e7fb7add38b08be9","version": 1,"locktime": 0,"vin": [{"stakebase": "90743aad855880e517270550d2a881627d84db5265142fd1e7fb7add38b08be9","sequence": 0},...], "vout": [{"value": 25.1394,"n": 0, "scriptPubKey": {"asm": "OP_DUP OP_HASH160 ea132286328cfc819457b9dec386c4b5c84faa5c OP_EQUALVERIFY OP_CHECKSIG", "hex": "76a914ea132286328cfc819457b9dec386c4b5c84faa5c88ac", "reqSigs": 1, "type": "pubkeyhash", "addresses": ["1NLg3QJMsMQGM5KEUaEu5ADDmKQSLHwmyh", ...]}}, ...]}`<br /><br />**For non-coinbase / non-stakebase transactions**<br />`{"hex": "01000000010000000000000000000000000000000000000000000000000000000000000000f...","txid": "90743aad855880e517270550d2a881627d84db5265142fd1e7fb7add38b08be9","version": 1,"locktime": 0,"vin": [{"txid": "60ac4b057247b3d0b9a8173de56b5e1be8c1d1da970511c626ef53706c66be04","scriptSig": {"asm": "3046022100cb42f8df44eca83dd0a727988dcde9384953e830b1f8004d57485e2ede1b9c8f0...","hex": "493046022100cb42f8df44eca83dd0a727988dcde9384953e830b1f8004d57485e2ede1b9c8..."}, "sequence": 4294967295}, ...], "vout": [{"value": 25.1394,"n": 0, "scriptPubKey": {"asm": "OP_DUP OP_HASH160 ea132286328cfc819457b9dec386c4b5c84faa5c OP_EQUALVERIFY OP_CHECKSIG", "hex": "76a914ea132286328cfc819457b9dec386c4b5c84faa5c88ac", "reqSigs": 1, "type": "pubkeyhash", "addresses": ["1NLg3QJMsMQGM5KEUaEu5ADDmKQSLHwmyh", ...]}}, ...]}`|
 [Return to Overview](#MethodOverview)<br />
@@ -560,9 +585,9 @@ the method name for further details such as parameter and return information.
 |   |   |
 |---|---|
 |Method|validateaddress|
-|Parameters|1. `address`: `(string, required)` decred address.|
+|Parameters|1. `address`: `(string, required)` Decred address.|
 |Description|Verify an address is valid.|
-|Returns|`(json object)`<br />`isvalid`: `(bool)` whether or not the address is valid.<br />`address`: `(string)` the decred address validated.<br /><br />`{"isvalid": true or false,"address": "decredaddress"}`|
+|Returns|`(json object)`<br />`isvalid`: `(bool)` whether or not the address is valid.<br />`address`: `(string)` the Decred address validated.<br /><br />`{"isvalid": true or false,"address": "decredaddress"}`|
 [Return to Overview](#MethodOverview)<br />
 
 ***
@@ -611,7 +636,7 @@ the method name for further details such as parameter and return information.
 |---|---|
 |Method|getcurrentnet|
 |Parameters|None|
-|Description|Get decred network dcrd is running on.|
+|Description|Get Decred network dcrd is running on.|
 |Returns|`numeric`|
 |Example Return|`(mainnet)` `3652501241` <br /> `(testnet)` `118034699`  <br /> `(testnet2)` `1223139429` |
 [Return to Overview](#ExtMethodOverview)<br />
@@ -623,10 +648,10 @@ the method name for further details such as parameter and return information.
 |   |   |
 |---|---|
 |Method|searchrawtransactions|
-|Parameters|1. `address`: `(string, required)` decred address.<br /> 2. `verbose`: `(int, optional, default=true)` specifies the transaction is returned as a JSON object instead of hex-encoded string.<br />3. `skip`: `(int, optional, default=0)` the number of leading transactions to leave out of the final response.<br /> 4. `count`: `(int, optional, default=100)` the maximum number of transactions to return.<br /> 5. `vinextra`: `(int, optional, default=0)` specify that extra data from previous output will be returned in vin.|
+|Parameters|1. `address`: `(string, required)` Decred address.<br /> 2. `verbose`: `(int, optional, default=true)` specifies the transaction is returned as a JSON object instead of hex-encoded string.<br />3. `skip`: `(int, optional, default=0)` the number of leading transactions to leave out of the final response.<br /> 4. `count`: `(int, optional, default=100)` the maximum number of transactions to return.<br /> 5. `vinextra`: `(int, optional, default=0)` specify that extra data from previous output will be returned in vin.|
 |Description|Returns raw data for transactions involving the passed address. Returned transactions are pulled from both the database, and transactions currently in the mempool. Transactions pulled from the mempool will have the `"confirmations"` field set to 0. Usage of this RPC requires the optional `--addrindex` flag to be activated, otherwise all responses will simply return with an error stating the address index has not yet been built up. Similarly, until the address index has caught up with the current best height, all requests will return an error response in order to avoid serving stale data.|
 |Returns (verbose=0)|`(json array of strings)`<br />`serializedtx`: `(string)` hex-encoded bytes of the serialized transaction.<br />`["serializedtx", ... ]` |
-|Returns (verbose=1)|`(array of json objects)`<br/>`hex`: `(string)` hex-encoded transaction.<br />`txid`: `(string)` the hash of the transaction.<br />`version`: `(numeric)` the transaction version.<br />`locktime`: `(numeric)` the transaction lock time.<br />`vin`: `(json array)` the transaction inputs as json objects.<br />`coinbase`: `(string)` the hex-encoded bytes of the signature script.<br />`stakebase`: `(string)` the hash of the stake transaction.<br />`sequence`:  `(numeric)` the script sequence number.<br />`txid`: `(string)` the hash of the origin transaction.<br />`vout`: `(numeric)` the index of the output being redeemed from the origin transaction.<br />`scriptSig`: `(json object)` the signature script used to redeem the origin transaction.<br />`asm`: `(string)` disassembly of the script.<br />`hex`: `(string)` hex-encoded bytes of the script.<br />`prevOut`: Data from the origin transaction output with index vout.<br />`addresses`:  `(array of string)` previous output addresses.<br />`value`: `(numeric)` previous output value.<br />`sequence`: `(numeric)` the script sequence number.<br />`vout`: `(array of json objects)` the transaction outputs as json objects.<br />`value`: `(numeric)` the value in DCR.<br />`n`: `(numeric)` the index of this transaction output.<br />`scriptPubKey`: `(json object)` the public key script used to pay coins.<br />`asm`: `(string)` disassembly of the script.<br />`hex`: `(string)` hex-encoded bytes of the script.<br />`reqSigs`: `(numeric)` the number of required signatures.<br />`type`: `(string)` the type of the script (e.g. 'pubkeyhash').<br />`addresses`: `(json array of string)` the decred addresses associated with this output.<br />`address`:  `(string)` the decred address.<br />`blockhash`: `(string)` hash of the block the transaction is part of.<br />`confirmations`: `(numeric)` number of numeric confirmations of block.<br /> `time`: `(numeric)` transaction time in seconds since the epoch.<br />`blocktime`: `(numeric)` block time in seconds since the epoch.<br/><br />**For coinbase transactions**<br />`[{"hex": "data", "txid": "hash", "version": n, "locktime": n,"vin": [{"coinbase": "data",  "sequence": n},{"txid": "hash", "vout": n, "scriptSig": {"asm": "asm", "hex": "data"}, "prevOut": {"addresses": ["value", ...], "value": n.nnn}, "sequence": n}, ...],"vout": [{ "value": n,"n": n, "scriptPubKey": {"asm": "asm", "hex": "data", "reqSigs": n, "type": "scripttype", "addresses": ["address", ...]}}, ...], "blockhash":"hash", "confirmations":n, "time":t, "blocktime":t },...]`<br /><br />**For stakebase transactions**<br />`[{"hex": "data", "txid": "hash", "version": n, "locktime": n,"vin": [{"stakebase": "hash",  "sequence": n},{"txid": "hash", "vout": n, "scriptSig": {"asm": "asm", "hex": "data"}, "prevOut": {"addresses": ["value", ...], "value": n.nnn}, "sequence": n}, ...],"vout": [{ "value": n,"n": n, "scriptPubKey": {"asm": "asm", "hex": "data", "reqSigs": n, "type": "scripttype", "addresses": ["address", ...]}}, ...], "blockhash":"hash", "confirmations":n, "time":t, "blocktime":t },...]`<br /><br />**For non-coinbase / non-stakebase transactions**<br />`[{"hex": "data", "txid": "hash", "version": n, "locktime": n,"vin": [{"txid": "hash", "vout": n, "scriptSig": {"asm": "asm", "hex": "data"}, "prevOut": {"addresses": ["value",...], "value": n.nnn}, "sequence": n}, ...],"vout": [{ "value": n,"n": n, "scriptPubKey": {"asm": "asm", "hex": "data", "reqSigs": n, "type": "scripttype", "addresses": ["address", ...]}}, ...], "blockhash":"hash", "confirmations":n, "time":t, "blocktime":t },...]`|
+|Returns (verbose=1)|`(array of json objects)`<br />`hex`: `(string)` hex-encoded transaction.<br />`txid`: `(string)` the hash of the transaction.<br />`version`: `(numeric)` the transaction version.<br />`locktime`: `(numeric)` the transaction lock time.<br />`expiry`: `(numeric)` the transaction expiry.<br />`vin`: `(json array)` the transaction inputs as json objects.<br />`coinbase`: `(string)` the hex-encoded bytes of the signature script.<br />`stakebase`: `(string)` the hash of the stake transaction.<br />`sequence`:  `(numeric)` the script sequence number.<br />`txid`: `(string)` the hash of the origin transaction.<br />`vout`: `(numeric)` the index of the output being redeemed from the origin transaction.<br />`scriptSig`: `(json object)` the signature script used to redeem the origin transaction.<br />`asm`: `(string)` disassembly of the script.<br />`hex`: `(string)` hex-encoded bytes of the script.<br />`prevOut`: Data from the origin transaction output with index vout.<br />`addresses`:  `(array of string)` previous output addresses.<br />`value`: `(numeric)` previous output value.<br />`sequence`: `(numeric)` the script sequence number.<br />`vout`: `(array of json objects)` the transaction outputs as json objects.<br />`value`: `(numeric)` the value in DCR.<br />`n`: `(numeric)` the index of this transaction output.<br />`scriptPubKey`: `(json object)` the public key script used to pay coins.<br />`asm`: `(string)` disassembly of the script.<br />`hex`: `(string)` hex-encoded bytes of the script.<br />`reqSigs`: `(numeric)` the number of required signatures.<br />`type`: `(string)` the type of the script (e.g. 'pubkeyhash').<br />`addresses`: `(json array of string)` the Decred addresses associated with this output.<br />`address`:  `(string)` the Decred address.<br />`blockhash`:  `(string)` the hash of the block that contains the transaction.<br />`blockheight`:  `(numeric)` the height of the block that contains the transaction.<br />`blockindex`:  `(numeric)` the index within the array of transactions contained by the block.<br />`confirmations`:  `(numeric)` number of confirmations.<br />`time`: `(numeric)` transaction time in seconds since the epoch.<br />`blocktime`:  `(numeric)` block time in seconds since the epoch.<br /><br />**For coinbase transactions**<br />`[{"hex": "data", "txid": "hash", "version": n, "locktime": n,"vin": [{"coinbase": "data",  "sequence": n},{"txid": "hash", "vout": n, "scriptSig": {"asm": "asm", "hex": "data"}, "prevOut": {"addresses": ["value", ...], "value": n.nnn}, "sequence": n}, ...],"vout": [{ "value": n, "n": n, "scriptPubKey": {"asm": "asm", "hex": "data", "reqSigs": n, "type": "scripttype", "addresses": ["address", ...]}}, ...], "blockhash": "hash", "blockheight": n, confirmations": n, "time": n, "blocktime": n},...]`<br /><br />**For stakebase transactions**<br />`[{"hex": "data", "txid": "hash", "version": n, "locktime": n,"vin": [{"stakebase": "hash",  "sequence": n},{"txid": "hash", "vout": n, "scriptSig": {"asm": "asm", "hex": "data"}, "prevOut": {"addresses": ["value", ...], "value": n.nnn}, "sequence": n}, ...],"vout": [{ "value": n,"n": n, "scriptPubKey": {"asm": "asm", "hex": "data", "reqSigs": n, "type": "scripttype", "addresses": ["address", ...]}}, ...], "blockhash": "hash", "blockheight": n, "blockindex": n, confirmations": n, "time": n, "blocktime": n},...]`<br /><br />**For non-coinbase / non-stakebase transactions**<br />`[{"hex": "data", "txid": "hash", "version": n, "locktime": n,"vin": [{"txid": "hash", "vout": n, "scriptSig": {"asm": "asm", "hex": "data"}, "prevOut": {"addresses": ["value",...], "value": n.nnn}, "sequence": n}, ...],"vout": [{ "value": n,"n": n, "scriptPubKey": {"asm": "asm", "hex": "data", "reqSigs": n, "type": "scripttype", "addresses": ["address", ...]}}, ...], "blockhash":"hash", "blockheight": n, "blockindex": n, confirmations": n, "time": n, "blocktime": n},...]`|
 [Return to Overview](#ExtMethodOverview)<br />
 
 ***
@@ -737,7 +762,7 @@ user.  Click the method name for further details such as parameter and return in
 |---|---|
 |Method|notifyreceived|
 |Notifications|[recvtx](#recvtx) and [redeemingtx](#redeemingtx)|
-|Parameters|1. `Addresses`: `(JSON array, required)`<br />`decredaddress`: `(string)` the decred address.<br /><br />`["decredaddress", ...]`|
+|Parameters|1. `Addresses`: `(JSON array, required)`<br />`decredaddress`: `(string)` the Decred address.<br /><br />`["decredaddress", ...]`|
 |Description|Send a recvtx notification when a transaction added to mempool or appears in a newly-attached block contains a txout pkScript sending to any of the passed addresses.  Matching outpoints are automatically registered for redeemingtx notifications.|
 |Returns|Nothing|
 [Return to Overview](#WSMethodOverview)<br />
@@ -750,7 +775,7 @@ user.  Click the method name for further details such as parameter and return in
 |---|---|
 |Method|stopnotifyreceived|
 |Notifications|None|
-|Parameters|1. `Addresses`: `(JSON array, required)`<br />`decredaddress`: `(string)` the decred address.<br /><br />`["decredaddress", ...]`|
+|Parameters|1. `Addresses`: `(JSON array, required)`<br />`decredaddress`: `(string)` the Decred address.<br /><br />`["decredaddress", ...]`|
 |Description|Cancel registered receive notifications for each passed address.|
 |Returns|Nothing|
 [Return to Overview](#WSMethodOverview)<br />
@@ -934,7 +959,7 @@ The following is an overview of the JSON-RPC notifications used for Websocket co
 |---|---|
 |Method|txaccepted|
 |Request|[notifynewtransactions](#notifynewtransactions)|
-|Parameters|1. `TxSha`: `(string)` hex-encoded bytes of the transaction hash.<br />2. `Amount`: `(numeric)` sum of the value of all the transaction outpoints.|
+|Parameters|1. `TxId`: `(string)` hex-encoded bytes of the transaction hash.<br />2. `Amount`: `(numeric)` sum of the value of all the transaction outpoints.|
 |Description|Notifies when a new transaction has been accepted and the client has requested standard transaction details.|
 |Example|Example txaccepted notification for mainnet transaction id `16c54c9d02fe570b9d41b518c0daefae81cc05c69bbe842058e84c6ed5826261` (newlines added for readability):<br /><br />`{"jsonrpc": "1.0", "method": "txaccepted", "params": ["16c54c9d02fe570b9d41b518c0daefae81cc05c69bbe842058e84c6ed5826261", 55838384], "id": null}`|
 [Return to Overview](#NotificationOverview)<br />
@@ -994,7 +1019,7 @@ various languages.
 **8.1 Go**
 
 This section provides examples of using the RPC interface using Go and the
-[dcrrpcclient](https://github.com/decred/dcrrpcclient) package.
+[rpcclient](https://github.com/decred/dcrd/tree/master/rpcclient) package.
 
 * [Using getblockcount to Retrieve the Current Block Height](#ExampleGetBlockCount)
 * [Using getblock to Retrieve the Genesis Block](#ExampleGetBlock)
@@ -1006,7 +1031,7 @@ This section provides examples of using the RPC interface using Go and the
 **8.1.1 Using getblockcount to Retrieve the Current Block Height**<br />
 
 The following is an example Go application which uses the
-[dcrrpcclient](https://github.com/decred/dcrrpcclient) package to connect with
+[rpcclient](https://github.com/decred/dcrd/tree/master/rpcclient) package to connect with
 a dcrd instance via Websockets, issues [getblockcount](#getblockcount) to
 retrieve the current block height, and displays it.
 
@@ -1014,11 +1039,12 @@ retrieve the current block height, and displays it.
 package main
 
 import (
-	"github.com/decred/dcrrpcclient"
-	"github.com/decred/dcrd/dcrutil"
 	"io/ioutil"
 	"log"
 	"path/filepath"
+
+	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/rpcclient"
 )
 
 func main() {
@@ -1034,14 +1060,14 @@ func main() {
 	// Create a new RPC client using websockets.  Since this example is
 	// not long-lived, the connection will be closed as soon as the program
 	// exits.
-	connCfg := &dcrrpcclient.ConnConfig{
+	connCfg := &rpcclient.ConnConfig{
 		Host:         "localhost:9109",
 		Endpoint:     "ws",
 		User:         "yourrpcuser",
 		Pass:         "yourrpcpass",
 		Certificates: certs,
 	}
-	client, err := dcrrpcclient.New(connCfg, nil)
+	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1059,7 +1085,7 @@ func main() {
 Which results in:
 
 ```bash
-Block count: 276978
+Block count: 203528
 ```
 
 <a name="ExampleGetBlock" />
@@ -1067,7 +1093,7 @@ Block count: 276978
 **8.1.2 Using getblock to Retrieve the Genesis Block**<br />
 
 The following is an example Go application which uses the
-[dcrrpcclient](https://github.com/decred/dcrrpcclient) package to connect with
+[rpcclient](https://github.com/decred/dcrd/tree/master/rpcclient) package to connect with
 a dcrd instance via Websockets, issues [getblock](#getblock) to retrieve
 information about the Genesis block, and display a few details about it.
 
@@ -1075,13 +1101,14 @@ information about the Genesis block, and display a few details about it.
 package main
 
 import (
-	"github.com/decred/dcrrpcclient"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/wire"
 	"io/ioutil"
 	"log"
 	"path/filepath"
 	"time"
+
+	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/rpcclient"
 )
 
 func main() {
@@ -1097,14 +1124,14 @@ func main() {
 	// Create a new RPC client using websockets.  Since this example is
 	// not long-lived, the connection will be closed as soon as the program
 	// exits.
-	connCfg := &dcrrpcclient.ConnConfig{
-		Host:         "localhost:19109",
+	connCfg := &rpcclient.ConnConfig{
+		Host:         "localhost:9109",
 		Endpoint:     "ws",
 		User:         "yourrpcuser",
 		Pass:         "yourrpcpass",
 		Certificates: certs,
 	}
-	client, err := dcrrpcclient.New(connCfg, nil)
+	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1113,8 +1140,8 @@ func main() {
 	// Query the RPC server for the genesis block using the "getblock"
 	// command with the verbose flag set to true and the verboseTx flag
 	// set to false.
-	genesisHashStr := "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-	blockHash, err := wire.NewShaHashFromStr(genesisHashStr)
+	genesisHashStr := "298e5cc3d985bfe7f81dc135f360abe089edd4396b86d2de66b0cef42b21d980"
+	blockHash, err := chainhash.NewHashFromStr(genesisHashStr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1139,14 +1166,14 @@ func main() {
 Which results in:
 
 ```bash
-Hash: 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
+Hash: 298e5cc3d985bfe7f81dc135f360abe089edd4396b86d2de66b0cef42b21d980
 Previous Block: 0000000000000000000000000000000000000000000000000000000000000000
-Next Block: 00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048
-Merkle root: 4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b
-Timestamp: 2009-01-03 18:15:05 +0000 UTC
-Confirmations: 277290
-Difficulty: 1.000000
-Size (in bytes): 285
+Next Block: 000000000000437482b6d47f82f374cde539440ddb108b0a76886f0d87d126b9
+Merkle root: 66aa7491b9adce110585ccab7e3fb5fe280de174530cca10eba2c6c3df01c10d
+Timestamp: 2016-02-08 18:00:00 +0000 UTC
+Confirmations: 203529
+Difficulty: 32767.749998
+Size (in bytes): 0
 Num transactions: 1
 ```
 
@@ -1156,7 +1183,7 @@ Num transactions: 1
 Notifications (Websocket-specific)**<br />
 
 The following is an example Go application which uses the
-[dcrrpcclient](https://github.com/decred/dcrrpcclient) package to connect with
+[rpcclient](https://github.com/decred/dcrd/tree/master/rpcclient) package to connect with
 a dcrd instance via Websockets and registers for
 [blockconnected](#blockconnected) and [blockdisconnected](#blockdisconnected)
 notifications with [notifyblocks](#notifyblocks).  It also sets up handlers for
@@ -1166,24 +1193,25 @@ the notifications.
 package main
 
 import (
-	"github.com/decred/dcrrpcclient"
-	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/wire"
 	"io/ioutil"
 	"log"
 	"path/filepath"
 	"time"
+
+	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/rpcclient"
 )
 
 func main() {
 	// Setup handlers for blockconnected and blockdisconnected
 	// notifications.
-	ntfnHandlers := dcrrpcclient.NotificationHandlers{
-		OnBlockConnected: func(hash *wire.ShaHash, height int32) {
-			log.Printf("Block connected: %v (%d)", hash, height)
+	ntfnHandlers := rpcclient.NotificationHandlers{
+		OnBlockConnected: func(blockHeader []byte, transactions [][]byte) {
+			log.Printf("Block connected: %x (%d txs)", blockHeader, len(transactions))
+
 		},
-		OnBlockDisconnected: func(hash *wire.ShaHash, height int32) {
-			log.Printf("Block disconnected: %v", hash, height)
+		OnBlockDisconnected: func(blockHeader []byte) {
+			log.Printf("Block disconnected: %x", blockHeader)
 		},
 	}
 
@@ -1197,14 +1225,14 @@ func main() {
 	}
 
 	// Create a new RPC client using websockets.
-	connCfg := &dcrrpcclient.ConnConfig{
+	connCfg := &rpcclient.ConnConfig{
 		Host:         "localhost:9109",
 		Endpoint:     "ws",
 		User:         "yourrpcuser",
 		Pass:         "yourrpcpass",
 		Certificates: certs,
 	}
-	client, err := dcrrpcclient.New(connCfg, &ntfnHandlers)
+	client, err := rpcclient.New(connCfg, &ntfnHandlers)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1234,10 +1262,10 @@ func main() {
 Example output:
 
 ```
-2014/05/12 20:33:17 Client shutdown in 10 seconds...
-2014/05/12 20:33:19 Block connected: 000000000000000007dff1f95f7b3f5eac2892a4123069517caf34e2c417650d (300461)
-2014/05/12 20:33:27 Client shutting down...
-2014/05/12 20:31:27 Client shutdown complete.
+Client shutdown in 10 seconds...
+Block connected: 050000008478546af6812f4b3cb2148b5967b2dab78c3438d31821760f000000000000002c5f513f6ed478b90a7fc3525bbd64d16ab9b577c6b01861a1e9438f42e22ad95369522fdb6d393edf7eff3f0b33e93b60361fef1ec678843faae2caec0b782701003406e68c8961050013004aa00000e21668193dcd2d0302000000a21d03002bed00003b125d5a005fd38e00000000f1ea07e25fff20eb000000000000000000000000000000000000000005000000 (0 txs)
+Client shutting down...
+Client shutdown complete.
 ```
 
 <a name="ExampleNodeJsCode" />
@@ -1253,6 +1281,9 @@ The following is example node.js code which uses [ws](https://github.com/einaros
 issues [notifyblocks](#notifyblocks) to register for
 [blockconnected](#blockconnected) and [blockdisconnected](#blockdisconnected)
 notifications, and displays all incoming messages.
+
+This code has only been confirmed to work as of node.js 8.11.1 LTS.  It might
+not work with earlier versions.
 
 ```javascript
 var fs = require('fs');
@@ -1271,9 +1302,10 @@ var password = "yourpassword";
 // for the certificate to properly validate.
 var ws = new WebSocket('wss://127.0.0.1:9109/ws', {
   headers: {
-    'Authorization': 'Basic '+new Buffer(user+':'+password).toString('base64')
+    'Authorization': 'Basic '+Buffer.from(user+':'+password).toString('base64')
   },
   cert: cert,
+  ecdhCurve: 'secp521r1', // Required for node.js v8.11.1 LTS, not for v10.1.0.
   ca: [cert]
 });
 ws.on('open', function() {

@@ -340,14 +340,6 @@ func readElement(r io.Reader, element interface{}) error {
 		*e = CurrencyNet(rv)
 		return nil
 
-	case *BloomUpdateType:
-		rv, err := binarySerializer.Uint8(r)
-		if err != nil {
-			return err
-		}
-		*e = BloomUpdateType(rv)
-		return nil
-
 	case *RejectCode:
 		rv, err := binarySerializer.Uint8(r)
 		if err != nil {
@@ -466,13 +458,6 @@ func writeElement(w io.Writer, element interface{}) error {
 
 	case CurrencyNet:
 		err := binarySerializer.PutUint32(w, littleEndian, uint32(e))
-		if err != nil {
-			return err
-		}
-		return nil
-
-	case BloomUpdateType:
-		err := binarySerializer.PutUint8(w, uint8(e))
 		if err != nil {
 			return err
 		}
@@ -661,7 +646,7 @@ func WriteVarString(w io.Writer, pver uint32, str string) error {
 // ReadVarBytes reads a variable length byte array.  A byte array is encoded
 // as a varInt containing the length of the array followed by the bytes
 // themselves.  An error is returned if the length is greater than the
-// passed maxAllowed parameter which helps protect against memory exhuastion
+// passed maxAllowed parameter which helps protect against memory exhaustion
 // attacks and forced panics thorugh malformed messages.  The fieldName
 // parameter is only used for the error message so it provides more context in
 // the error.

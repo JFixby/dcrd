@@ -1,4 +1,5 @@
 // Copyright (c) 2015-2016 The btcsuite developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/decred/dcrd/blockchain/stake"
-	"github.com/decred/dcrd/chaincfg/chainec"
+	"github.com/decred/dcrd/dcrec/secp256k1"
 	"github.com/decred/dcrd/txscript"
 )
 
@@ -180,34 +181,46 @@ const (
 	numSpecialScripts = 64
 )
 
-// isPubKeyHash returns whether or not the passed public key script is a
-// standard pay-to-pubkey-hash script along with the pubkey hash it is paying to
-// if it is.
-func isPubKeyHash(script []byte) (bool, []byte) {
+// extractPubKeyHash extracts a pubkey hash that is being paid from the passed
+// public key script if it is a standard pay-to-pubkey-hash script.  It will
+// return nil otherwise.
+func extractPubKeyHash(script []byte) []byte {
 	if len(script) == 25 && script[0] == txscript.OP_DUP &&
 		script[1] == txscript.OP_HASH160 &&
 		script[2] == txscript.OP_DATA_20 &&
 		script[23] == txscript.OP_EQUALVERIFY &&
 		script[24] == txscript.OP_CHECKSIG {
 
-		return true, script[3:23]
+		return script[3:23]
 	}
 
-	return false, nil
+	return nil
 }
 
-// isScriptHash returns whether or not the passed public key script is a
-// standard pay-to-script-hash script along with the script hash it is paying to
-// if it is.
-func isScriptHash(script []byte) (bool, []byte) {
+// isPubKeyHash returns whether or not the passed public key script is a
+// standard pay-to-pubkey-hash script.
+func isPubKeyHash(script []byte) bool {
+	return extractPubKeyHash(script) != nil
+}
+
+// extractScriptHash extracts a script hash that is being paid from the passed
+// public key script if it is a standard pay-to-script-hash script.  It will
+// return nil otherwise.
+func extractScriptHash(script []byte) []byte {
 	if len(script) == 23 && script[0] == txscript.OP_HASH160 &&
 		script[1] == txscript.OP_DATA_20 &&
 		script[22] == txscript.OP_EQUAL {
 
-		return true, script[2:22]
+		return script[2:22]
 	}
 
-	return false, nil
+	return nil
+}
+
+// isScriptHash returns whether or not the passed public key script is a
+// standard pay-to-script-hash script.
+func isScriptHash(script []byte) bool {
+	return extractScriptHash(script) != nil
 }
 
 // isPubKey returns whether or not the passed public key script is a standard
@@ -227,7 +240,7 @@ func isPubKey(script []byte) (bool, []byte) {
 
 		// Ensure the public key is valid.
 		serializedPubKey := script[1:34]
-		_, err := chainec.Secp256k1.ParsePubKey(serializedPubKey)
+		_, err := secp256k1.ParsePubKey(serializedPubKey)
 		if err == nil {
 			return true, serializedPubKey
 		}
@@ -239,7 +252,7 @@ func isPubKey(script []byte) (bool, []byte) {
 
 		// Ensure the public key is valid.
 		serializedPubKey := script[1:66]
-		_, err := chainec.Secp256k1.ParsePubKey(serializedPubKey)
+		_, err := secp256k1.ParsePubKey(serializedPubKey)
 		if err == nil {
 			return true, serializedPubKey
 		}
@@ -252,13 +265,8 @@ func isPubKey(script []byte) (bool, []byte) {
 // when encoded with the domain specific compression algorithm described above.
 func compressedScriptSize(scriptVersion uint16, pkScript []byte,
 	compressionVersion uint32) int {
-	// Pay-to-pubkey-hash script.
-	if valid, _ := isPubKeyHash(pkScript); valid {
-		return 21
-	}
-
-	// Pay-to-script-hash script.
-	if valid, _ := isScriptHash(pkScript); valid {
+	// Pay-to-pubkey-hash or pay-to-script-hash script.
+	if isPubKeyHash(pkScript) || isScriptHash(pkScript) {
 		return 21
 	}
 
@@ -314,14 +322,14 @@ func putCompressedScript(target []byte, scriptVersion uint16, pkScript []byte,
 	}
 
 	// Pay-to-pubkey-hash script.
-	if valid, hash := isPubKeyHash(pkScript); valid {
+	if hash := extractPubKeyHash(pkScript); hash != nil {
 		target[0] = cstPayToPubKeyHash
 		copy(target[1:21], hash)
 		return 21
 	}
 
 	// Pay-to-script-hash script.
-	if valid, hash := isScriptHash(pkScript); valid {
+	if hash := extractScriptHash(pkScript); hash != nil {
 		target[0] = cstPayToScriptHash
 		copy(target[1:21], hash)
 		return 21
@@ -428,7 +436,7 @@ func decompressScript(compressedPkScript []byte,
 		}
 		compressedKey[0] = oddness
 		copy(compressedKey[1:], compressedPkScript[1:])
-		key, err := chainec.Secp256k1.ParsePubKey(compressedKey)
+		key, err := secp256k1.ParsePubKey(compressedKey)
 		if err != nil {
 			return nil
 		}
@@ -539,7 +547,7 @@ func decompressTxOutAmount(amount uint64) uint64 {
 	// The decompressed amount is now one of the following two equations:
 	// x = 9*n + d - 1  | where e < 9
 	// x = n - 1        | where e = 9
-	n := uint64(0)
+	var n uint64
 	if exponent < 9 {
 		lastDigit := amount%9 + 1
 		amount /= 9
@@ -716,8 +724,7 @@ const (
 )
 
 // encodeFlags encodes transaction flags into a single byte.
-func encodeFlags(isCoinBase bool, hasExpiry bool, txType stake.TxType,
-	fullySpent bool) byte {
+func encodeFlags(isCoinBase bool, hasExpiry bool, txType stake.TxType, fullySpent bool) byte {
 	b := uint8(txType)
 	b <<= txTypeShift
 

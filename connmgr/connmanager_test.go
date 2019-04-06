@@ -60,7 +60,17 @@ func (c mockConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // mockDialer mocks the net.Dial interface by returning a mock connection to
 // the given address.
-func mockDialer(addr net.Addr) (net.Conn, error) {
+func mockDialer(network, addr string) (net.Conn, error) {
+	r, w := io.Pipe()
+	c := &mockConn{rAddr: &mockAddr{network, addr}}
+	c.Reader = r
+	c.Writer = w
+	return c, nil
+}
+
+// mockDialer mocks the net.Dial interface by returning a mock connection to
+// the given address.
+func mockDialerAddr(addr net.Addr) (net.Conn, error) {
 	r, w := io.Pipe()
 	c := &mockConn{rAddr: addr}
 	c.Reader = r
@@ -76,6 +86,21 @@ func TestNewConfig(t *testing.T) {
 	}
 	_, err = New(&Config{
 		Dial: mockDialer,
+	})
+	if err != nil {
+		t.Fatalf("New unexpected error: %v", err)
+	}
+
+	_, err = New(&Config{
+		Dial:     mockDialer,
+		DialAddr: mockDialerAddr,
+	})
+	if err == nil {
+		t.Fatalf("New expected error: 'Dial and DialAddr can't be both nil', got nil")
+	}
+
+	_, err = New(&Config{
+		DialAddr: mockDialerAddr,
 	})
 	if err != nil {
 		t.Fatalf("New unexpected error: %v", err)
@@ -215,6 +240,52 @@ func TestTargetOutbound(t *testing.T) {
 	cmgr.Stop()
 }
 
+// TestPassAddrAlongDialAddr tests if when using the DialAddr config option,
+// any address object returned by GetNewAddress will be correctly passed along
+// to DialAddr to be used for connecting to a host.
+func TestPassAddrAlongDialAddr(t *testing.T) {
+	connected := make(chan *ConnReq)
+
+	// targetAddr will be the specific address we'll use to connect. It _could_
+	// be carrying more info than a standard (tcp/udp) network address, so it
+	// needs to be relayed to dialAddr.
+	targetAddr := mockAddr{
+		net:     "invalid",
+		address: "unreachable",
+	}
+
+	cmgr, err := New(&Config{
+		TargetOutbound: 1,
+		DialAddr:       mockDialerAddr,
+		GetNewAddress: func() (net.Addr, error) {
+			return targetAddr, nil
+		},
+		OnConnection: func(c *ConnReq, conn net.Conn) {
+			connected <- c
+		},
+	})
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+	cmgr.Start()
+
+	select {
+	case c := <-connected:
+		var receivedMock mockAddr
+		var isMockAddr bool
+		receivedMock, isMockAddr = c.Addr.(mockAddr)
+		if !isMockAddr {
+			t.Fatalf("connected to an address that was not a mockAddr")
+		}
+		if receivedMock != targetAddr {
+			t.Fatalf("connected to an address different than the expected target")
+		}
+	case <-time.After(time.Millisecond * 5):
+		t.Fatalf("did not get connection to target address before timeout")
+	}
+	cmgr.Stop()
+}
+
 // TestRetryPermanent tests that permanent connection requests are retried.
 //
 // We make a permanent connection request using Connect, disconnect it using
@@ -307,10 +378,10 @@ func TestMaxRetryDuration(t *testing.T) {
 	time.AfterFunc(5*time.Millisecond, func() {
 		close(networkUp)
 	})
-	timedDialer := func(addr net.Addr) (net.Conn, error) {
+	timedDialer := func(network, addr string) (net.Conn, error) {
 		select {
 		case <-networkUp:
-			return mockDialer(addr)
+			return mockDialer(network, addr)
 		default:
 			return nil, errors.New("network down")
 		}
@@ -352,7 +423,7 @@ func TestMaxRetryDuration(t *testing.T) {
 // failure gracefully.
 func TestNetworkFailure(t *testing.T) {
 	var dials uint32
-	errDialer := func(net net.Addr) (net.Conn, error) {
+	errDialer := func(network, addr string) (net.Conn, error) {
 		atomic.AddUint32(&dials, 1)
 		return nil, errors.New("network down")
 	}
@@ -391,7 +462,7 @@ func TestNetworkFailure(t *testing.T) {
 // the failure.
 func TestStopFailed(t *testing.T) {
 	done := make(chan struct{}, 1)
-	waitDialer := func(addr net.Addr) (net.Conn, error) {
+	waitDialer := func(network, addr string) (net.Conn, error) {
 		done <- struct{}{}
 		time.Sleep(time.Millisecond)
 		return nil, errors.New("network down")

@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -23,8 +23,8 @@ func (e VoteVersionError) Error() string {
 // not exist.
 type HashError string
 
-// Error returns the assertion error as a human-readable string and satisfies
-// the error interface.
+// Error returns the error as a human-readable string and satisfies the error
+// interface.
 func (e HashError) Error() string {
 	return fmt.Sprintf("hash %v does not exist", string(e))
 }
@@ -37,6 +37,17 @@ type DeploymentError string
 // the error interface.
 func (e DeploymentError) Error() string {
 	return fmt.Sprintf("deployment ID %v does not exist", string(e))
+}
+
+// DuplicateDeploymentError identifies an error that indicates a duplicate
+// deployment ID was specified in the network parameter deployment definitions.
+type DuplicateDeploymentError string
+
+// Error returns the assertion error as a human-readable string and satisfies
+// the error interface.
+func (e DuplicateDeploymentError) Error() string {
+	return fmt.Sprintf("deployment ID %v exists in more than one deployment",
+		string(e))
 }
 
 // AssertError identifies an error that indicates an internal code consistency
@@ -65,8 +76,8 @@ const (
 	// maximum allowed size.
 	ErrBlockTooBig
 
-	// ErrWrongBlockSize indicates that the block size from the header was
-	// not the actual serialized size of the block.
+	// ErrWrongBlockSize indicates that the block size in the header is not
+	// the actual serialized size of the block.
 	ErrWrongBlockSize
 
 	// ErrBlockVersionTooOld indicates the block version is too old and is
@@ -157,9 +168,9 @@ const (
 	// range or not referencing one at all.
 	ErrBadTxInput
 
-	// ErrMissingTx indicates a transaction referenced by an input is
-	// missing.
-	ErrMissingTx
+	// ErrMissingTxOut indicates a transaction output referenced by an input
+	// either does not exist or has already been spent.
+	ErrMissingTxOut
 
 	// ErrUnfinalizedTx indicates a transaction has not been finalized.
 	// A valid block may only contain finalized transactions.
@@ -178,10 +189,6 @@ const (
 	// ErrImmatureSpend indicates a transaction is attempting to spend a
 	// coinbase that has not yet reached the required maturity.
 	ErrImmatureSpend
-
-	// ErrDoubleSpend indicates a transaction is attempting to spend coins
-	// that have already been spent.
-	ErrDoubleSpend
 
 	// ErrSpendTooHigh indicates a transaction is attempting to spend more
 	// value than the sum of all of its inputs.
@@ -320,49 +327,55 @@ const (
 	// than were allowed.
 	ErrTooManyRevocations
 
-	// ErrSStxCommitment indicates that the propotional amounts from the inputs
-	// of an SStx did not match those found in the commitment outputs.
-	ErrSStxCommitment
+	// ErrTicketCommitment indicates that a ticket commitment contains an amount
+	// that does not coincide with the associated ticket input amount.
+	ErrTicketCommitment
 
-	// ErrUnparseableSSGen indicates that the SSGen block vote or votebits data
-	// was unparseable from the null data outputs.
-	ErrUnparseableSSGen
+	// ErrInvalidVoteInput indicates that an input to a vote transaction is
+	// either not a stake ticket submission or is not a supported version.
+	ErrInvalidVoteInput
 
-	// ErrInvalidSSGenInput indicates that the input SStx to the SSGen tx was
-	// invalid because it was not an SStx.
-	ErrInvalidSSGenInput
+	// ErrBadNumPayees indicates that either a vote or revocation transaction
+	// does not make the correct number of payments per the associated ticket
+	// commitments.
+	ErrBadNumPayees
 
-	// ErrSSGenPayeeNum indicates that the number of payees from the referenced
-	// SSGen's SStx was not the same as the number of the payees in the outputs
-	// of the SSGen tx.
-	ErrSSGenPayeeNum
+	// ErrBadPayeeScriptVersion indicates that either a vote or revocation
+	// transaction output that corresponds to a ticket commitment does not use
+	// a supported script version.
+	ErrBadPayeeScriptVersion
 
-	// ErrSSGenPayeeOuts indicates that the SSGen payee outputs were either not
-	// the values that would be expected given the rewards and input amounts of
-	// the original SStx, or that the SSGen addresses did not correctly correspond
-	// to the null data outputs given in the originating SStx.
-	ErrSSGenPayeeOuts
+	// ErrBadPayeeScriptType indicates that either a vote or revocation
+	// transaction output that corresponds to a ticket commitment does not pay
+	// to the same script type required by the commitment.
+	ErrBadPayeeScriptType
+
+	// ErrBadPayeeScriptType indicates that either a vote or revocation
+	// transaction output that corresponds to a ticket commitment does not pay
+	// to the hash required by the commitment.
+	ErrMismatchedPayeeHash
+
+	// ErrBadPayeeValue indicates that either a vote or revocation transaction
+	// output that corresponds to a ticket commitment does not pay the expected
+	// amount required by the commitment.
+	ErrBadPayeeValue
 
 	// ErrSSGenSubsidy indicates that there was an error in the amount of subsidy
 	// generated in the vote.
 	ErrSSGenSubsidy
 
-	// ErrSStxInImmature indicates that the OP_SSTX tagged output used as input
-	// was not yet TicketMaturity many blocks old.
-	ErrSStxInImmature
+	// ErrImmatureTicketSpend indicates that a vote or revocation is attempting
+	// to spend a ticket submission output that has not yet reached the required
+	// maturity.
+	ErrImmatureTicketSpend
 
-	// ErrSStxInScrType indicates that the input used in an sstx was not
-	// pay-to-pubkeyhash or pay-to-script-hash, which is required. It can
-	// be OP_SS* tagged, but it must be P2PKH or P2SH.
-	ErrSStxInScrType
+	// ErrTicketInputScript indicates that a ticket input is not one of the
+	// supported script forms or versions.
+	ErrTicketInputScript
 
-	// ErrInvalidSSRtxInput indicates that the input for the SSRtx was not from
-	// an SStx.
-	ErrInvalidSSRtxInput
-
-	// ErrSSRtxPayeesMismatch means that the number of payees in an SSRtx was
-	// not the same as the number of payees in the outputs of the input SStx.
-	ErrSSRtxPayeesMismatch
+	// ErrInvalidRevokeInput indicates that an input to a revocation transaction
+	// is either not a stake ticket submission or is not a supported version.
+	ErrInvalidRevokeInput
 
 	// ErrSSRtxPayees indicates that the SSRtx failed to pay out to the committed
 	// addresses or amounts from the originating SStx.
@@ -372,9 +385,9 @@ const (
 	// an OP_SSTX tagged output from an SStx.
 	ErrTxSStxOutSpend
 
-	// ErrRegTxSpendStakeOut indicates that a regular tx attempted to spend to
-	// outputs tagged with stake tags, e.g. OP_SSTX.
-	ErrRegTxSpendStakeOut
+	// ErrRegTxCreateStakeOut indicates that a regular tx attempted to create
+	// a stake tagged output.
+	ErrRegTxCreateStakeOut
 
 	// ErrInvalidFinalState indicates that the final state of the PRNG included
 	// in the the block differed from the calculated final state.
@@ -439,10 +452,12 @@ const (
 	// ErrFraudAmountIn indicates the witness amount given was fraudulent.
 	ErrFraudAmountIn
 
-	// ErrFraudBlockHeight indicates the witness block height given was fraudulent.
+	// ErrFraudBlockHeight indicates the witness block height given was
+	// fraudulent.
 	ErrFraudBlockHeight
 
-	// ErrFraudBlockIndex indicates the witness block index given was fraudulent.
+	// ErrFraudBlockIndex indicates the witness block index given was
+	// fraudulent.
 	ErrFraudBlockIndex
 
 	// ErrZeroValueOutputSpend indicates that a transaction attempted to spend a
@@ -452,6 +467,25 @@ const (
 	// ErrInvalidEarlyVoteBits indicates that a block before stake validation
 	// height had an unallowed vote bits value.
 	ErrInvalidEarlyVoteBits
+
+	// ErrInvalidEarlyFinalState indicates that a block before stake validation
+	// height had a non-zero final state.
+	ErrInvalidEarlyFinalState
+
+	// ErrKnownInvalidBlock indicates that this block has previously failed
+	// validation.
+	ErrKnownInvalidBlock
+
+	// ErrInvalidAncestorBlock indicates that an ancestor of this block has
+	// failed validation.
+	ErrInvalidAncestorBlock
+
+	// ErrInvalidTemplateParent indicates that a block template builds on a
+	// block that is either not the current best chain tip or its parent.
+	ErrInvalidTemplateParent
+
+	// numErrorCodes is the maximum error code number used in tests.
+	numErrorCodes
 )
 
 // Map of ErrorCode values back to their constant names for pretty printing.
@@ -461,7 +495,7 @@ var errorCodeStrings = map[ErrorCode]string{
 	ErrBlockTooBig:            "ErrBlockTooBig",
 	ErrWrongBlockSize:         "ErrWrongBlockSize",
 	ErrBlockVersionTooOld:     "ErrBlockVersionTooOld",
-	ErrBadStakeVersion:        "ErrBlockStakeVersion",
+	ErrBadStakeVersion:        "ErrBadStakeVersion",
 	ErrInvalidTime:            "ErrInvalidTime",
 	ErrTimeTooOld:             "ErrTimeTooOld",
 	ErrTimeTooNew:             "ErrTimeTooNew",
@@ -480,12 +514,11 @@ var errorCodeStrings = map[ErrorCode]string{
 	ErrBadTxOutValue:          "ErrBadTxOutValue",
 	ErrDuplicateTxInputs:      "ErrDuplicateTxInputs",
 	ErrBadTxInput:             "ErrBadTxInput",
-	ErrMissingTx:              "ErrMissingTx",
+	ErrMissingTxOut:           "ErrMissingTxOut",
 	ErrUnfinalizedTx:          "ErrUnfinalizedTx",
 	ErrDuplicateTx:            "ErrDuplicateTx",
 	ErrOverwriteTx:            "ErrOverwriteTx",
 	ErrImmatureSpend:          "ErrImmatureSpend",
-	ErrDoubleSpend:            "ErrDoubleSpend",
 	ErrSpendTooHigh:           "ErrSpendTooHigh",
 	ErrBadFees:                "ErrBadFees",
 	ErrTooManySigOps:          "ErrTooManySigOps",
@@ -519,19 +552,20 @@ var errorCodeStrings = map[ErrorCode]string{
 	ErrInvalidSSRtx:           "ErrInvalidSSRtx",
 	ErrRevocationsMismatch:    "ErrRevocationsMismatch",
 	ErrTooManyRevocations:     "ErrTooManyRevocations",
-	ErrSStxCommitment:         "ErrSStxCommitment",
-	ErrUnparseableSSGen:       "ErrUnparseableSSGen",
-	ErrInvalidSSGenInput:      "ErrInvalidSSGenInput",
-	ErrSSGenPayeeNum:          "ErrSSGenPayeeNum",
-	ErrSSGenPayeeOuts:         "ErrSSGenPayeeOuts",
+	ErrTicketCommitment:       "ErrTicketCommitment",
+	ErrInvalidVoteInput:       "ErrInvalidVoteInput",
+	ErrBadNumPayees:           "ErrBadNumPayees",
+	ErrBadPayeeScriptVersion:  "ErrBadPayeeScriptVersion",
+	ErrBadPayeeScriptType:     "ErrBadPayeeScriptType",
+	ErrMismatchedPayeeHash:    "ErrMismatchedPayeeHash",
+	ErrBadPayeeValue:          "ErrBadPayeeValue",
 	ErrSSGenSubsidy:           "ErrSSGenSubsidy",
-	ErrSStxInImmature:         "ErrSStxInImmature",
-	ErrSStxInScrType:          "ErrSStxInScrType",
-	ErrInvalidSSRtxInput:      "ErrInvalidSSRtxInput",
-	ErrSSRtxPayeesMismatch:    "ErrSSRtxPayeesMismatch",
+	ErrImmatureTicketSpend:    "ErrImmatureTicketSpend",
+	ErrTicketInputScript:      "ErrTicketInputScript",
+	ErrInvalidRevokeInput:     "ErrInvalidRevokeInput",
 	ErrSSRtxPayees:            "ErrSSRtxPayees",
 	ErrTxSStxOutSpend:         "ErrTxSStxOutSpend",
-	ErrRegTxSpendStakeOut:     "ErrRegTxSpendStakeOut",
+	ErrRegTxCreateStakeOut:    "ErrRegTxCreateStakeOut",
 	ErrInvalidFinalState:      "ErrInvalidFinalState",
 	ErrPoolSize:               "ErrPoolSize",
 	ErrForceReorgWrongChain:   "ErrForceReorgWrongChain",
@@ -552,6 +586,10 @@ var errorCodeStrings = map[ErrorCode]string{
 	ErrFraudBlockIndex:        "ErrFraudBlockIndex",
 	ErrZeroValueOutputSpend:   "ErrZeroValueOutputSpend",
 	ErrInvalidEarlyVoteBits:   "ErrInvalidEarlyVoteBits",
+	ErrInvalidEarlyFinalState: "ErrInvalidEarlyFinalState",
+	ErrKnownInvalidBlock:      "ErrKnownInvalidBlock",
+	ErrInvalidAncestorBlock:   "ErrInvalidAncestorBlock",
+	ErrInvalidTemplateParent:  "ErrInvalidTemplateParent",
 }
 
 // String returns the ErrorCode as a human-readable name.

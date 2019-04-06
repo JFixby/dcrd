@@ -1,5 +1,5 @@
-// Copyright (c) 2017 The decred developers
 // Copyright (c) 2016 The btcsuite developers
+// Copyright (c) 2017-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -10,7 +10,6 @@ import (
 
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/wire"
 )
 
 // ThresholdState define the various threshold states used when voting on
@@ -23,7 +22,7 @@ type ThresholdState byte
 // since these values are serialized and must be stable for long-term storage.
 const (
 	// ThresholdDefined is the first state for each deployment and is the
-	// state for the genesis block has by defintion for all deployments.
+	// state for the genesis block has by definition for all deployments.
 	ThresholdDefined ThresholdState = 0
 
 	// ThresholdStarted is the state for a deployment once its start time
@@ -80,7 +79,7 @@ type ThresholdStateTuple struct {
 	// state contains the current ThresholdState.
 	State ThresholdState
 
-	// coice is set to invalidChoice unless state is: ThresholdLockedIn,
+	// Choice is set to invalidChoice unless state is: ThresholdLockedIn,
 	// ThresholdFailed & ThresholdActive.  choice should always be
 	// crosschecked with invalidChoice.
 	Choice uint32
@@ -213,12 +212,12 @@ func newThresholdCaches(params *chaincfg.Params) map[uint32][]thresholdStateCach
 	return caches
 }
 
-// thresholdState returns the current rule change threshold state for the block
-// AFTER the given node and deployment ID.  The cache is used to ensure the
-// threshold states for previous windows are only calculated once.
+// nextThresholdState returns the current rule change threshold state for the
+// block AFTER the given node and deployment ID.  The cache is used to ensure
+// the threshold states for previous windows are only calculated once.
 //
 // This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) thresholdState(version uint32, prevNode *blockNode, checker thresholdConditionChecker, cache *thresholdStateCache) (ThresholdStateTuple, error) {
+func (b *BlockChain) nextThresholdState(version uint32, prevNode *blockNode, checker thresholdConditionChecker, cache *thresholdStateCache) (ThresholdStateTuple, error) {
 	// The threshold state for the window that contains the genesis block is
 	// defined by definition.
 	confirmationWindow := int64(checker.RuleChangeActivationInterval())
@@ -233,11 +232,7 @@ func (b *BlockChain) thresholdState(version uint32, prevNode *blockNode, checker
 	wantHeight := calcWantHeight(svh,
 		int64(checker.RuleChangeActivationInterval()),
 		prevNode.height+1)
-	var err error
-	prevNode, err = b.ancestorNode(prevNode, wantHeight)
-	if err != nil {
-		return newThresholdState(ThresholdFailed, invalidChoice), err
-	}
+	prevNode = prevNode.Ancestor(wantHeight)
 
 	// Iterate backwards through each of the previous confirmation windows
 	// to find the most recently cached threshold state.
@@ -251,11 +246,7 @@ func (b *BlockChain) thresholdState(version uint32, prevNode *blockNode, checker
 
 		// The start and expiration times are based on the median block
 		// time, so calculate it now.
-		medianTime, err := b.calcPastMedianTime(prevNode)
-		if err != nil {
-			return newThresholdState(ThresholdFailed,
-				invalidChoice), err
-		}
+		medianTime := prevNode.CalcPastMedianTime()
 
 		// The state is simply defined if the start time hasn't been
 		// been reached yet.
@@ -273,12 +264,7 @@ func (b *BlockChain) thresholdState(version uint32, prevNode *blockNode, checker
 
 		// Get the ancestor that is the last block of the previous
 		// confirmation window.
-		prevNode, err = b.ancestorNode(prevNode, prevNode.height-
-			confirmationWindow)
-		if err != nil {
-			return newThresholdState(ThresholdFailed,
-				invalidChoice), err
-		}
+		prevNode = prevNode.RelativeAncestor(confirmationWindow)
 	}
 
 	// Start with the threshold state for the most recent confirmation
@@ -310,11 +296,7 @@ func (b *BlockChain) thresholdState(version uint32, prevNode *blockNode, checker
 
 			// The deployment of the rule change fails if it expires
 			// before it is accepted and locked in.
-			medianTime, err := b.calcPastMedianTime(prevNode)
-			if err != nil {
-				return newThresholdState(ThresholdFailed,
-					invalidChoice), err
-			}
+			medianTime := prevNode.CalcPastMedianTime()
 			medianTimeUnix := uint64(medianTime.Unix())
 			if medianTimeUnix >= checker.EndTime() {
 				stateTuple.State = ThresholdFailed
@@ -346,19 +328,15 @@ func (b *BlockChain) thresholdState(version uint32, prevNode *blockNode, checker
 		case ThresholdStarted:
 			// The deployment of the rule change fails if it expires
 			// before it is accepted and locked in.
-			medianTime, err := b.calcPastMedianTime(prevNode)
-			if err != nil {
-				return newThresholdState(ThresholdFailed,
-					invalidChoice), err
-			}
+			medianTime := prevNode.CalcPastMedianTime()
 			if uint64(medianTime.Unix()) >= checker.EndTime() {
 				stateTuple.State = ThresholdFailed
 				break
 			}
 
 			// At this point, the rule change is still being voted
-			// on by the miners, so iterate backwards through the
-			// confirmation window to count all of the votes in it.
+			// on, so iterate backwards through the confirmation
+			// window to count all of the votes in it.
 			var (
 				counts       []thresholdConditionTally
 				totalVotes   uint32
@@ -389,17 +367,7 @@ func (b *BlockChain) thresholdState(version uint32, prevNode *blockNode, checker
 					}
 				}
 
-				// Get the previous block node.  This function
-				// is used over simply accessing countNode.parent
-				// directly as it will dynamically create
-				// previous block nodes as needed.  This helps
-				// allow only the pieces of the chain that are
-				// needed to remain in memory.
-				countNode, err = b.getPrevNodeFromNode(countNode)
-				if err != nil {
-					return newThresholdState(
-						ThresholdFailed, invalidChoice), err
-				}
+				countNode = countNode.parent
 			}
 
 			// Determine if we have reached quorum.
@@ -485,7 +453,7 @@ func (b *BlockChain) deploymentState(prevNode *blockNode, version uint32, deploy
 				chain:      b,
 			}
 			cache := &b.deploymentCaches[version][k]
-			return b.thresholdState(version, prevNode, checker, cache)
+			return b.nextThresholdState(version, prevNode, checker, cache)
 		}
 	}
 
@@ -496,15 +464,120 @@ func (b *BlockChain) deploymentState(prevNode *blockNode, version uint32, deploy
 	return invalidState, DeploymentError(deploymentID)
 }
 
-// ThresholdState returns the current rule change threshold state of the given
-// deployment ID for the block AFTER the provided block hash.
+// stateLastChanged returns the node at which the provided consensus deployment
+// agenda last changed state.  The function will return nil if the state has
+// never changed.
+//
+// This function MUST be called with the chain state lock held (for writes).
+func (b *BlockChain) stateLastChanged(version uint32, node *blockNode, checker thresholdConditionChecker, cache *thresholdStateCache) (*blockNode, error) {
+	// No state changes are possible if the chain is not yet past stake
+	// validation height and had a full interval to change.
+	confirmationInterval := int64(checker.RuleChangeActivationInterval())
+	svh := checker.StakeValidationHeight()
+	if node == nil || node.height < svh+confirmationInterval {
+		return nil, nil
+	}
+
+	// Determine the current state.  Notice that nextThresholdState always
+	// calculates the state for the block after the provided one, so use the
+	// parent to get the state for the requested block.
+	curState, err := b.nextThresholdState(version, node.parent, checker, cache)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine the first block of the current confirmation interval in order
+	// to determine block at which the state possibly changed.  Since the state
+	// can only change at an interval boundary, loop backwards one interval at
+	// a time to determine when (and if) the state changed.
+	finalNodeHeight := calcWantHeight(svh, confirmationInterval, node.height)
+	node = node.Ancestor(finalNodeHeight + 1)
+	priorStateChangeNode := node
+	for node != nil && node.parent != nil {
+		// As previously mentioned, nextThresholdState always calculates the
+		// state for the block after the provided one, so use the parent to get
+		// the state of the block itself.
+		state, err := b.nextThresholdState(version, node.parent, checker, cache)
+		if err != nil {
+			return nil, err
+		}
+
+		if state.State != curState.State {
+			return priorStateChangeNode, nil
+		}
+
+		// Get the ancestor that is the first block of the previous confirmation
+		// interval.
+		priorStateChangeNode = node
+		node = node.RelativeAncestor(confirmationInterval)
+	}
+
+	return nil, nil
+}
+
+// StateLastChangedHeight returns the height at which the provided consensus
+// deployment agenda last changed state.  Note that, unlike the ThresholdState
+// function, this function returns the information as of the passed block hash.
 //
 // This function is safe for concurrent access.
-func (b *BlockChain) ThresholdState(hash *chainhash.Hash, version uint32, deploymentID string) (ThresholdStateTuple, error) {
+func (b *BlockChain) StateLastChangedHeight(hash *chainhash.Hash, version uint32, deploymentID string) (int64, error) {
+	// NOTE: The requirement for the node being fully validated here is strictly
+	// stronger than what is actually required.  In reality, all that is needed
+	// is for the block data for the node and all of its ancestors to be
+	// available, but there is not currently any tracking to be able to
+	// efficiently determine that state.
+	node := b.index.LookupNode(hash)
+	if node == nil || !b.index.NodeStatus(node).KnownValid() {
+		return 0, HashError(hash.String())
+	}
+
+	// Fetch the treshold state cache for the provided deployment id as well as
+	// the condition checker.
+	var cache *thresholdStateCache
+	var checker thresholdConditionChecker
+	for k := range b.chainParams.Deployments[version] {
+		if b.chainParams.Deployments[version][k].Vote.Id == deploymentID {
+			checker = deploymentChecker{
+				deployment: &b.chainParams.Deployments[version][k],
+				chain:      b,
+			}
+			cache = &b.deploymentCaches[version][k]
+			break
+		}
+	}
+
+	if cache == nil {
+		return 0, fmt.Errorf("threshold state cache for agenda with "+
+			"deployment id (%s) not found", deploymentID)
+	}
+
+	// Find the node at which the current state changed.
 	b.chainLock.Lock()
-	node, ok := b.index[*hash]
+	stateNode, err := b.stateLastChanged(version, node, checker, cache)
 	b.chainLock.Unlock()
-	if !ok {
+	if err != nil {
+		return 0, err
+	}
+
+	var height int64
+	if stateNode != nil {
+		height = stateNode.height
+	}
+	return height, nil
+}
+
+// NextThresholdState returns the current rule change threshold state of the
+// given deployment ID for the block AFTER the provided block hash.
+//
+// This function is safe for concurrent access.
+func (b *BlockChain) NextThresholdState(hash *chainhash.Hash, version uint32, deploymentID string) (ThresholdStateTuple, error) {
+	// NOTE: The requirement for the node being fully validated here is strictly
+	// stronger than what is actually required.  In reality, all that is needed
+	// is for the block data for the node and all of its ancestors to be
+	// available, but there is not currently any tracking to be able to
+	// efficiently determine that state.
+	node := b.index.LookupNode(hash)
+	if node == nil || !b.index.NodeStatus(node).KnownValid() {
 		invalidState := ThresholdStateTuple{
 			State:  ThresholdInvalid,
 			Choice: invalidChoice,
@@ -529,15 +602,16 @@ func (b *BlockChain) ThresholdState(hash *chainhash.Hash, version uint32, deploy
 //
 // This function MUST be called with the chain state lock held (for writes).
 func (b *BlockChain) isLNFeaturesAgendaActive(prevNode *blockNode) (bool, error) {
-	// Determine the version for the LN features agenda as defined in
-	// DCP0002 and DCP0003 for the provided network.
-	deploymentVer := uint32(5)
-	if b.chainParams.Net != wire.MainNet {
-		deploymentVer = 6
+	// Determine the correct deployment version for the LN features consensus
+	// vote as defined in DCP0002 and DCP0003 or treat it as active when voting
+	// is not enabled for the current network.
+	const deploymentID = chaincfg.VoteIDLNFeatures
+	deploymentVer, ok := b.deploymentVers[deploymentID]
+	if !ok {
+		return true, nil
 	}
 
-	state, err := b.deploymentState(prevNode, deploymentVer,
-		chaincfg.VoteIDLNFeatures)
+	state, err := b.deploymentState(prevNode, deploymentVer, deploymentID)
 	if err != nil {
 		return false, err
 	}
@@ -556,7 +630,50 @@ func (b *BlockChain) isLNFeaturesAgendaActive(prevNode *blockNode) (bool, error)
 // This function is safe for concurrent access.
 func (b *BlockChain) IsLNFeaturesAgendaActive() (bool, error) {
 	b.chainLock.Lock()
-	isActive, err := b.isLNFeaturesAgendaActive(b.bestNode)
+	isActive, err := b.isLNFeaturesAgendaActive(b.bestChain.Tip())
+	b.chainLock.Unlock()
+	return isActive, err
+}
+
+// isFixSeqLocksAgendaActive returns whether or not the fix sequence locks
+// agenda vote, as defined in DCP0004 has passed and is now active from the
+// point of view of the passed block node.
+//
+// It is important to note that, as the variable name indicates, this function
+// expects the block node prior to the block for which the deployment state is
+// desired.  In other words, the returned deployment state is for the block
+// AFTER the passed node.
+//
+// This function MUST be called with the chain state lock held (for writes).
+func (b *BlockChain) isFixSeqLocksAgendaActive(prevNode *blockNode) (bool, error) {
+	// Determine the correct deployment version for the fix sequence locks
+	// consensus vote as defined in DCP0004 or treat it as active when voting
+	// is not enabled for the current network.
+	const deploymentID = chaincfg.VoteIDFixLNSeqLocks
+	deploymentVer, ok := b.deploymentVers[deploymentID]
+	if !ok {
+		return true, nil
+	}
+
+	state, err := b.deploymentState(prevNode, deploymentVer, deploymentID)
+	if err != nil {
+		return false, err
+	}
+
+	// NOTE: The choice field of the return threshold state is not examined
+	// here because there is only one possible choice that can be active for
+	// the agenda, which is yes, so there is no need to check it.
+	return state.State == ThresholdActive, nil
+}
+
+// IsFixSeqLocksAgendaActive returns whether or not whether or not the fix
+// sequence locks agenda vote, as defined in DCP0004 has passed and is now
+// active for the block AFTER the current best chain block.
+//
+// This function is safe for concurrent access.
+func (b *BlockChain) IsFixSeqLocksAgendaActive() (bool, error) {
+	b.chainLock.Lock()
+	isActive, err := b.isFixSeqLocksAgendaActive(b.bestChain.Tip())
 	b.chainLock.Unlock()
 	return isActive, err
 }
@@ -569,14 +686,23 @@ type VoteCounts struct {
 }
 
 // getVoteCounts returns the vote counts for the specified version for the
-// current interval.
+// current rule change activation interval.
 //
 // This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) getVoteCounts(node *blockNode, version uint32, d chaincfg.ConsensusDeployment) (VoteCounts, error) {
-	height := calcWantHeight(b.chainParams.StakeValidationHeight,
-		int64(b.chainParams.RuleChangeActivationInterval), node.height)
+func (b *BlockChain) getVoteCounts(node *blockNode, version uint32, d *chaincfg.ConsensusDeployment) (VoteCounts, error) {
+	// Don't try to count votes before the stake validation height since there
+	// could not possibly have been any.
+	svh := b.chainParams.StakeValidationHeight
+	if node.height < svh {
+		return VoteCounts{
+			VoteChoices: make([]uint32, len(d.Vote.Choices)),
+		}, nil
+	}
 
-	var err error
+	// Calculate the final height of the prior interval.
+	rcai := int64(b.chainParams.RuleChangeActivationInterval)
+	height := calcWantHeight(svh, rcai, node.height)
+
 	result := VoteCounts{
 		VoteChoices: make([]uint32, len(d.Vote.Choices)),
 	}
@@ -602,51 +728,49 @@ func (b *BlockChain) getVoteCounts(node *blockNode, version uint32, d chaincfg.C
 			result.VoteChoices[index]++
 		}
 
-		// Get the previous block node.  This function
-		// is used over simply accessing countNode.parent
-		// directly as it will dynamically create
-		// previous block nodes as needed.  This helps
-		// allow only the pieces of the chain that are
-		// needed to remain in memory.
-		countNode, err = b.getPrevNodeFromNode(countNode)
-		if err != nil {
-			return VoteCounts{}, err
-		}
+		countNode = countNode.parent
 	}
 
 	return result, nil
 }
 
 // GetVoteCounts returns the vote counts for the specified version and
-// deployment identifier for the current interval.
+// deployment identifier for the current rule change activation interval.
 //
 // This function is safe for concurrent access.
 func (b *BlockChain) GetVoteCounts(version uint32, deploymentID string) (VoteCounts, error) {
 	for k := range b.chainParams.Deployments[version] {
-		if b.chainParams.Deployments[version][k].Vote.Id == deploymentID {
+		deployment := &b.chainParams.Deployments[version][k]
+		if deployment.Vote.Id == deploymentID {
 			b.chainLock.Lock()
-			defer b.chainLock.Unlock()
-			return b.getVoteCounts(b.bestNode, version,
-				b.chainParams.Deployments[version][k])
+			counts, err := b.getVoteCounts(b.bestChain.Tip(), version, deployment)
+			b.chainLock.Unlock()
+			return counts, err
 		}
 	}
 	return VoteCounts{}, DeploymentError(deploymentID)
 }
 
 // CountVoteVersion returns the total number of version votes for the current
-// interval.
+// rule change activation interval.
 //
 // This function is safe for concurrent access.
 func (b *BlockChain) CountVoteVersion(version uint32) (uint32, error) {
 	b.chainLock.Lock()
 	defer b.chainLock.Unlock()
-	countNode := b.bestNode
+	countNode := b.bestChain.Tip()
 
-	height := calcWantHeight(b.chainParams.StakeValidationHeight,
-		int64(b.chainParams.RuleChangeActivationInterval),
-		countNode.height)
+	// Don't try to count votes before the stake validation height since there
+	// could not possibly have been any.
+	svh := b.chainParams.StakeValidationHeight
+	if countNode.height < svh {
+		return 0, nil
+	}
 
-	var err error
+	// Calculate the final height of the prior interval.
+	rcai := int64(b.chainParams.RuleChangeActivationInterval)
+	height := calcWantHeight(svh, rcai, countNode.height)
+
 	total := uint32(0)
 	for countNode.height > height {
 		for _, vote := range countNode.votes {
@@ -659,16 +783,7 @@ func (b *BlockChain) CountVoteVersion(version uint32) (uint32, error) {
 			total++
 		}
 
-		// Get the previous block node.  This function
-		// is used over simply accessing countNode.parent
-		// directly as it will dynamically create
-		// previous block nodes as needed.  This helps
-		// allow only the pieces of the chain that are
-		// needed to remain in memory.
-		countNode, err = b.getPrevNodeFromNode(countNode)
-		if err != nil {
-			return 0, err
-		}
+		countNode = countNode.parent
 	}
 
 	return total, nil

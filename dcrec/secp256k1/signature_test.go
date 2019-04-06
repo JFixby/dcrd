@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -331,9 +331,9 @@ func TestSignatures(t *testing.T) {
 	for _, test := range signatureTests {
 		var err error
 		if test.der {
-			_, err = ParseDERSignature(test.sig, S256())
+			_, err = ParseDERSignature(test.sig)
 		} else {
-			_, err = ParseSignature(test.sig, S256())
+			_, err = ParseSignature(test.sig)
 		}
 		if err != nil {
 			if test.isValid {
@@ -438,19 +438,18 @@ func TestSignatureSerialize(t *testing.T) {
 	}
 }
 
-func testSignCompact(t *testing.T, tag string, curve *KoblitzCurve,
+func testSignCompact(t *testing.T, tag string,
 	data []byte, isCompressed bool) {
-	tmp, _ := GeneratePrivateKey(curve)
-	priv := (*PrivateKey)(tmp)
+	priv, _ := GeneratePrivateKey()
 
 	hashed := []byte("testing")
-	sig, err := SignCompact(curve, priv, hashed, isCompressed)
+	sig, err := SignCompact(priv, hashed, isCompressed)
 	if err != nil {
 		t.Errorf("%s: error signing: %s", tag, err)
 		return
 	}
 
-	pk, wasCompressed, err := RecoverCompact(curve, sig, hashed)
+	pk, wasCompressed, err := RecoverCompact(sig, hashed)
 	if err != nil {
 		t.Errorf("%s: error recovering: %s", tag, err)
 		return
@@ -474,7 +473,7 @@ func testSignCompact(t *testing.T, tag string, curve *KoblitzCurve,
 		sig[0] += 4
 	}
 
-	pk, wasCompressed, err = RecoverCompact(curve, sig, hashed)
+	pk, wasCompressed, err = RecoverCompact(sig, hashed)
 	if err != nil {
 		t.Errorf("%s: error recovering (2): %s", tag, err)
 		return
@@ -502,7 +501,7 @@ func TestSignCompact(t *testing.T) {
 			continue
 		}
 		compressed := i%2 != 0
-		testSignCompact(t, name, S256(), data, compressed)
+		testSignCompact(t, name, data, compressed)
 	}
 }
 
@@ -557,7 +556,7 @@ func TestRFC6979(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		privKey, _ := PrivKeyFromBytes(S256(), decodeHex(test.key))
+		privKey, _ := PrivKeyFromBytes(decodeHex(test.key))
 		hash := sha256.Sum256([]byte(test.msg))
 
 		// Ensure deterministically generated nonce is the expected value.

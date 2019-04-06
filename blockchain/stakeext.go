@@ -1,11 +1,13 @@
 // Copyright (c) 2013-2014 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
 package blockchain
 
 import (
+	"fmt"
+
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/database"
 	"github.com/decred/dcrd/dcrutil"
@@ -21,8 +23,9 @@ func (b *BlockChain) NextLotteryData() ([]chainhash.Hash, int, [6]byte, error) {
 	b.chainLock.RLock()
 	defer b.chainLock.RUnlock()
 
-	return b.bestNode.stakeNode.Winners(), b.bestNode.stakeNode.PoolSize(),
-		b.bestNode.stakeNode.FinalState(), nil
+	tipStakeNode := b.bestChain.Tip().stakeNode
+	return tipStakeNode.Winners(), tipStakeNode.PoolSize(),
+		tipStakeNode.FinalState(), nil
 }
 
 // lotteryDataForNode is a helper function that returns winning tickets
@@ -32,15 +35,14 @@ func (b *BlockChain) NextLotteryData() ([]chainhash.Hash, int, [6]byte, error) {
 // with the chainLock held for writes.
 func (b *BlockChain) lotteryDataForNode(node *blockNode) ([]chainhash.Hash, int, [6]byte, error) {
 	if node.height < b.chainParams.StakeEnabledHeight {
-		return []chainhash.Hash{}, 0, [6]byte{}, nil
+		return nil, 0, [6]byte{}, nil
 	}
 	stakeNode, err := b.fetchStakeNode(node)
 	if err != nil {
-		return []chainhash.Hash{}, 0, [6]byte{}, err
+		return nil, 0, [6]byte{}, err
 	}
 
-	return stakeNode.Winners(), b.bestNode.stakeNode.PoolSize(),
-		b.bestNode.stakeNode.FinalState(), nil
+	return stakeNode.Winners(), stakeNode.PoolSize(), stakeNode.FinalState(), nil
 }
 
 // lotteryDataForBlock takes a node block hash and returns the next tickets
@@ -50,15 +52,9 @@ func (b *BlockChain) lotteryDataForNode(node *blockNode) ([]chainhash.Hash, int,
 // This function is NOT safe for concurrent access and must have the chainLock
 // held for write access.
 func (b *BlockChain) lotteryDataForBlock(hash *chainhash.Hash) ([]chainhash.Hash, int, [6]byte, error) {
-	var node *blockNode
-	if n, exists := b.index[*hash]; exists {
-		node = n
-	} else {
-		var err error
-		node, err = b.findNode(hash, maxSearchDepth)
-		if err != nil {
-			return nil, 0, [6]byte{}, err
-		}
+	node := b.index.LookupNode(hash)
+	if node == nil {
+		return nil, 0, [6]byte{}, fmt.Errorf("block %s is not known", hash)
 	}
 
 	winningTickets, poolSize, finalState, err := b.lotteryDataForNode(node)
@@ -73,15 +69,15 @@ func (b *BlockChain) lotteryDataForBlock(hash *chainhash.Hash) ([]chainhash.Hash
 // chain, including side chain blocks.
 //
 // It is safe for concurrent access.
-// TODO An optimization can be added that only calls the read lock if the
-//   block is not minMemoryStakeNodes blocks before the current best node.
-//   This is because all the data for these nodes can be assumed to be
-//   in memory.
 func (b *BlockChain) LotteryDataForBlock(hash *chainhash.Hash) ([]chainhash.Hash, int, [6]byte, error) {
+	// TODO: An optimization can be added that only calls the read lock if the
+	// block is not minMemoryStakeNodes blocks before the current best node.
+	// This is because all the data for these nodes can be assumed to be
+	// in memory.
 	b.chainLock.Lock()
-	defer b.chainLock.Unlock()
-
-	return b.lotteryDataForBlock(hash)
+	winningTickets, poolSize, finalState, err := b.lotteryDataForBlock(hash)
+	b.chainLock.Unlock()
+	return winningTickets, poolSize, finalState, err
 }
 
 // LiveTickets returns all currently live tickets from the stake database.
@@ -89,7 +85,7 @@ func (b *BlockChain) LotteryDataForBlock(hash *chainhash.Hash) ([]chainhash.Hash
 // This function is NOT safe for concurrent access.
 func (b *BlockChain) LiveTickets() ([]chainhash.Hash, error) {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	return sn.LiveTickets(), nil
@@ -100,7 +96,7 @@ func (b *BlockChain) LiveTickets() ([]chainhash.Hash, error) {
 // This function is NOT safe for concurrent access.
 func (b *BlockChain) MissedTickets() ([]chainhash.Hash, error) {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	return sn.MissedTickets(), nil
@@ -112,7 +108,7 @@ func (b *BlockChain) MissedTickets() ([]chainhash.Hash, error) {
 // This function is safe for concurrent access.
 func (b *BlockChain) TicketsWithAddress(address dcrutil.Address) ([]chainhash.Hash, error) {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	tickets := sn.LiveTickets()
@@ -150,7 +146,7 @@ func (b *BlockChain) TicketsWithAddress(address dcrutil.Address) ([]chainhash.Ha
 // This function is safe for concurrent access.
 func (b *BlockChain) CheckLiveTicket(hash chainhash.Hash) bool {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	return sn.ExistsLiveTicket(hash)
@@ -162,7 +158,7 @@ func (b *BlockChain) CheckLiveTicket(hash chainhash.Hash) bool {
 // This function is safe for concurrent access.
 func (b *BlockChain) CheckLiveTickets(hashes []chainhash.Hash) []bool {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	existsSlice := make([]bool, len(hashes))
@@ -179,7 +175,7 @@ func (b *BlockChain) CheckLiveTickets(hashes []chainhash.Hash) []bool {
 // This function is safe for concurrent access.
 func (b *BlockChain) CheckMissedTickets(hashes []chainhash.Hash) []bool {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	existsSlice := make([]bool, len(hashes))
@@ -195,7 +191,7 @@ func (b *BlockChain) CheckMissedTickets(hashes []chainhash.Hash) []bool {
 // This function is safe for concurrent access.
 func (b *BlockChain) CheckExpiredTicket(hash chainhash.Hash) bool {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	return sn.ExistsExpiredTicket(hash)
@@ -207,7 +203,7 @@ func (b *BlockChain) CheckExpiredTicket(hash chainhash.Hash) bool {
 // This function is safe for concurrent access.
 func (b *BlockChain) CheckExpiredTickets(hashes []chainhash.Hash) []bool {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	existsSlice := make([]bool, len(hashes))
@@ -226,7 +222,7 @@ func (b *BlockChain) CheckExpiredTickets(hashes []chainhash.Hash) []bool {
 // the asked for transactions.
 func (b *BlockChain) TicketPoolValue() (dcrutil.Amount, error) {
 	b.chainLock.RLock()
-	sn := b.bestNode.stakeNode
+	sn := b.bestChain.Tip().stakeNode
 	b.chainLock.RUnlock()
 
 	var amt int64

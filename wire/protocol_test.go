@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -16,7 +16,8 @@ func TestServiceFlagStringer(t *testing.T) {
 		{0, "0x0"},
 		{SFNodeNetwork, "SFNodeNetwork"},
 		{SFNodeBloom, "SFNodeBloom"},
-		{0xffffffff, "SFNodeNetwork|SFNodeBloom|0xfffffffc"},
+		{SFNodeCF, "SFNodeCF"},
+		{0xffffffff, "SFNodeNetwork|SFNodeBloom|SFNodeCF|0xfffffff8"},
 	}
 
 	t.Logf("Running %d tests", len(tests))
@@ -30,14 +31,14 @@ func TestServiceFlagStringer(t *testing.T) {
 	}
 }
 
-// TestCurrencyNetStringer tests the stringized output for decred net types.
+// TestCurrencyNetStringer tests the stringized output for Decred net types.
 func TestCurrencyNetStringer(t *testing.T) {
 	tests := []struct {
 		in   CurrencyNet
 		want string
 	}{
 		{MainNet, "MainNet"},
-		{TestNet2, "TestNet2"},
+		{TestNet3, "TestNet3"},
 		{SimNet, "SimNet"},
 		{0xffffffff, "Unknown CurrencyNet (4294967295)"},
 	}

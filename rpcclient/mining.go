@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,7 +11,7 @@ import (
 	"errors"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/decred/dcrd/dcrjson/v2"
 	"github.com/decred/dcrd/dcrutil"
 )
 
@@ -107,11 +107,7 @@ type FutureSetGenerateResult chan *response
 // any occurred when setting the server to generate coins (mine) or not.
 func (r FutureSetGenerateResult) Receive() error {
 	_, err := receiveFuture(r)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // SetGenerateAsync returns an instance of a type that can be used to get the
@@ -373,7 +369,7 @@ func (c *Client) GetWorkSubmit(data string) (bool, error) {
 type FutureGetBlockTemplate chan *response
 
 // Receive waits for the response promised by the future and returns an error if
-// any occured while generating the block template.
+// any occurred while generating the block template.
 func (r FutureGetBlockTemplate) Receive() (*dcrjson.GetBlockTemplateResult, error) {
 	res, err := receiveFuture(r)
 	if err != nil {
@@ -453,7 +449,7 @@ func (c *Client) SubmitBlockAsync(block *dcrutil.Block, options *dcrjson.SubmitB
 	return c.sendCmd(cmd)
 }
 
-// SubmitBlock attempts to submit a new block into the decred network.
+// SubmitBlock attempts to submit a new block into the Decred network.
 func (c *Client) SubmitBlock(block *dcrutil.Block, options *dcrjson.SubmitBlockOptions) error {
 	return c.SubmitBlockAsync(block, options).Receive()
 }

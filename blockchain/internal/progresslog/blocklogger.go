@@ -1,5 +1,5 @@
 // Copyright (c) 2016 The btcsuite developers
-// Copyright (c) 2016 The Decred developers
+// Copyright (c) 2016-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,9 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btclog"
+	"github.com/decred/slog"
 
-	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/wire"
 )
 
@@ -23,7 +22,7 @@ type BlockProgressLogger struct {
 	receivedLogTx     int64
 	lastBlockLogTime  time.Time
 
-	subsystemLogger btclog.Logger
+	subsystemLogger slog.Logger
 	progressAction  string
 	sync.Mutex
 }
@@ -32,7 +31,7 @@ type BlockProgressLogger struct {
 // The progress message is templated as follows:
 //  {progressAction} {numProcessed} {blocks|block} in the last {timePeriod}
 //  ({numTxs}, height {lastBlockHeight}, {lastBlockTimeStamp})
-func NewBlockProgressLogger(progressMessage string, logger btclog.Logger) *BlockProgressLogger {
+func NewBlockProgressLogger(progressMessage string, logger slog.Logger) *BlockProgressLogger {
 	return &BlockProgressLogger{
 		lastBlockLogTime: time.Now(),
 		progressAction:   progressMessage,
@@ -46,12 +45,9 @@ func NewBlockProgressLogger(progressMessage string, logger btclog.Logger) *Block
 func (b *BlockProgressLogger) LogBlockHeight(block, parent *wire.MsgBlock) {
 	b.Lock()
 	defer b.Unlock()
+
 	b.receivedLogBlocks++
-	regularTxTreeValid := dcrutil.IsFlagSet16(block.Header.VoteBits,
-		dcrutil.BlockValid)
-	if regularTxTreeValid {
-		b.receivedLogTx += int64(len(parent.Transactions))
-	}
+	b.receivedLogTx += int64(len(block.Transactions))
 	b.receivedLogTx += int64(len(block.STransactions))
 
 	now := time.Now()

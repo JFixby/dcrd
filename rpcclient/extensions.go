@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2015 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,9 +12,10 @@ import (
 	"fmt"
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/decred/dcrd/dcrjson/v2"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/wire"
+	walletjson "github.com/decred/dcrwallet/rpc/jsonrpc/types"
 )
 
 var (
@@ -40,7 +41,7 @@ func (r FutureCreateEncryptedWalletResult) Receive() error {
 //
 // NOTE: This is a dcrwallet extension.
 func (c *Client) CreateEncryptedWalletAsync(passphrase string) FutureCreateEncryptedWalletResult {
-	cmd := dcrjson.NewCreateEncryptedWalletCmd(passphrase)
+	cmd := walletjson.NewCreateEncryptedWalletCmd(passphrase)
 	return c.sendCmd(cmd)
 }
 
@@ -488,7 +489,7 @@ func (r FutureExportWatchingWalletResult) Receive() ([]byte, []byte, error) {
 //
 // NOTE: This is a dcrwallet extension.
 func (c *Client) ExportWatchingWalletAsync(account string) FutureExportWatchingWalletResult {
-	cmd := dcrjson.NewExportWatchingWalletCmd(&account, dcrjson.Bool(true))
+	cmd := walletjson.NewExportWatchingWalletCmd(&account, dcrjson.Bool(true))
 	return c.sendCmd(cmd)
 }
 
@@ -591,7 +592,7 @@ func (c *Client) GetCurrentNet() (wire.CurrencyNet, error) {
 	return c.GetCurrentNetAsync().Receive()
 }
 
-// FutureGetHeadersResult is a future promise to delivere the result of a
+// FutureGetHeadersResult is a future promise to deliver the result of a
 // getheaders RPC invocation (or an applicable error).
 type FutureGetHeadersResult chan *response
 
@@ -617,7 +618,7 @@ func (r FutureGetHeadersResult) Receive() (*dcrjson.GetHeadersResult, error) {
 // of the RPC at some future time by invoking the Receive function on the returned instance.
 //
 // See GetHeaders for the blocking version and more details.
-func (c *Client) GetHeadersAsync(blockLocators []chainhash.Hash, hashStop *chainhash.Hash) FutureGetHeadersResult {
+func (c *Client) GetHeadersAsync(blockLocators []*chainhash.Hash, hashStop *chainhash.Hash) FutureGetHeadersResult {
 	concatenatedLocators := make([]byte, chainhash.HashSize*len(blockLocators))
 	for i := range blockLocators {
 		copy(concatenatedLocators[i*chainhash.HashSize:], blockLocators[i][:])
@@ -630,7 +631,7 @@ func (c *Client) GetHeadersAsync(blockLocators []chainhash.Hash, hashStop *chain
 // GetHeaders mimics the wire protocol getheaders and headers messages by
 // returning all headers on the main chain after the first known block in the
 // locators, up until a block hash matches hashStop.
-func (c *Client) GetHeaders(blockLocators []chainhash.Hash, hashStop *chainhash.Hash) (*dcrjson.GetHeadersResult, error) {
+func (c *Client) GetHeaders(blockLocators []*chainhash.Hash, hashStop *chainhash.Hash) (*dcrjson.GetHeadersResult, error) {
 	return c.GetHeadersAsync(blockLocators, hashStop).Receive()
 }
 
@@ -852,14 +853,14 @@ type FutureListAddressTransactionsResult chan *response
 
 // Receive waits for the response promised by the future and returns information
 // about all transactions associated with the provided addresses.
-func (r FutureListAddressTransactionsResult) Receive() ([]dcrjson.ListTransactionsResult, error) {
+func (r FutureListAddressTransactionsResult) Receive() ([]walletjson.ListTransactionsResult, error) {
 	res, err := receiveFuture(r)
 	if err != nil {
 		return nil, err
 	}
 
 	// Unmarshal the result as an array of listtransactions objects.
-	var transactions []dcrjson.ListTransactionsResult
+	var transactions []walletjson.ListTransactionsResult
 	err = json.Unmarshal(res, &transactions)
 	if err != nil {
 		return nil, err
@@ -880,7 +881,7 @@ func (c *Client) ListAddressTransactionsAsync(addresses []dcrutil.Address, accou
 	for _, addr := range addresses {
 		addrs = append(addrs, addr.EncodeAddress())
 	}
-	cmd := dcrjson.NewListAddressTransactionsCmd(addrs, &account)
+	cmd := walletjson.NewListAddressTransactionsCmd(addrs, &account)
 	return c.sendCmd(cmd)
 }
 
@@ -888,7 +889,7 @@ func (c *Client) ListAddressTransactionsAsync(addresses []dcrutil.Address, accou
 // with the provided addresses.
 //
 // NOTE: This is a dcrwallet extension.
-func (c *Client) ListAddressTransactions(addresses []dcrutil.Address, account string) ([]dcrjson.ListTransactionsResult, error) {
+func (c *Client) ListAddressTransactions(addresses []dcrutil.Address, account string) ([]walletjson.ListTransactionsResult, error) {
 	return c.ListAddressTransactionsAsync(addresses, account).Receive()
 }
 
@@ -1014,7 +1015,7 @@ func (r FutureSessionResult) Receive() (*dcrjson.SessionResult, error) {
 //
 // See Session for the blocking version and more details.
 //
-// NOTE: This is a decred extension.
+// NOTE: This is a Decred extension.
 func (c *Client) SessionAsync() FutureSessionResult {
 	// Not supported in HTTP POST mode.
 	if c.config.HTTPPostMode {
@@ -1029,7 +1030,7 @@ func (c *Client) SessionAsync() FutureSessionResult {
 //
 // This RPC requires the client to be running in websocket mode.
 //
-// NOTE: This is a decred extension.
+// NOTE: This is a Decred extension.
 func (c *Client) Session() (*dcrjson.SessionResult, error) {
 	return c.SessionAsync().Receive()
 }
@@ -1062,7 +1063,7 @@ func (r FutureTicketFeeInfoResult) Receive() (*dcrjson.TicketFeeInfoResult, erro
 //
 // See TicketFeeInfo for the blocking version and more details.
 //
-// NOTE: This is a decred extension.
+// NOTE: This is a Decred extension.
 func (c *Client) TicketFeeInfoAsync(blocks *uint32, windows *uint32) FutureTicketFeeInfoResult {
 	// Not supported in HTTP POST mode.
 	if c.config.HTTPPostMode {
@@ -1086,7 +1087,7 @@ func (c *Client) TicketFeeInfoAsync(blocks *uint32, windows *uint32) FutureTicke
 //
 // This RPC requires the client to be running in websocket mode.
 //
-// NOTE: This is a decred extension.
+// NOTE: This is a Decred extension.
 func (c *Client) TicketFeeInfo(blocks *uint32, windows *uint32) (*dcrjson.TicketFeeInfoResult, error) {
 	return c.TicketFeeInfoAsync(blocks, windows).Receive()
 }
@@ -1124,7 +1125,7 @@ func (r FutureTicketVWAPResult) Receive() (dcrutil.Amount, error) {
 //
 // See TicketVWAP for the blocking version and more details.
 //
-// NOTE: This is a decred extension.
+// NOTE: This is a Decred extension.
 func (c *Client) TicketVWAPAsync(start *uint32, end *uint32) FutureTicketVWAPResult {
 	// Not supported in HTTP POST mode.
 	if c.config.HTTPPostMode {
@@ -1139,7 +1140,7 @@ func (c *Client) TicketVWAPAsync(start *uint32, end *uint32) FutureTicketVWAPRes
 //
 // This RPC requires the client to be running in websocket mode.
 //
-// NOTE: This is a decred extension.
+// NOTE: This is a Decred extension.
 func (c *Client) TicketVWAP(start *uint32, end *uint32) (dcrutil.Amount, error) {
 	return c.TicketVWAPAsync(start, end).Receive()
 }
@@ -1172,7 +1173,7 @@ func (r FutureTxFeeInfoResult) Receive() (*dcrjson.TxFeeInfoResult, error) {
 //
 // See TxFeeInfo for the blocking version and more details.
 //
-// NOTE: This is a decred extension.
+// NOTE: This is a Decred extension.
 func (c *Client) TxFeeInfoAsync(blocks *uint32, start *uint32, end *uint32) FutureTxFeeInfoResult {
 	// Not supported in HTTP POST mode.
 	if c.config.HTTPPostMode {
@@ -1187,12 +1188,12 @@ func (c *Client) TxFeeInfoAsync(blocks *uint32, start *uint32, end *uint32) Futu
 //
 // This RPC requires the client to be running in websocket mode.
 //
-// NOTE: This is a decred extension.
+// NOTE: This is a Decred extension.
 func (c *Client) TxFeeInfo(blocks *uint32, start *uint32, end *uint32) (*dcrjson.TxFeeInfoResult, error) {
 	return c.TxFeeInfoAsync(blocks, start, end).Receive()
 }
 
-// FutureVersionResult is a future promise to delivere the result of a version
+// FutureVersionResult is a future promise to deliver the result of a version
 // RPC invocation (or an applicable error).
 type FutureVersionResult chan *response
 

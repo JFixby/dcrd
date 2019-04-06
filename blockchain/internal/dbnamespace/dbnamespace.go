@@ -12,18 +12,29 @@ var (
 	// fields for storage in the database.
 	ByteOrder = binary.LittleEndian
 
-	// BlockChainDbInfoBucketName is the name of the database bucket used to
-	// house a single k->v that stores global versioning and date information for
-	// the database.
-	BlockChainDbInfoBucketName = []byte("dbinfo")
+	// BCDBInfoBucketName is the name of the database bucket used to house
+	// global versioning and date information for the blockchain database.
+	BCDBInfoBucketName = []byte("dbinfo")
 
-	// HashIndexBucketName is the name of the db bucket used to house to the
-	// block hash -> block height index.
-	HashIndexBucketName = []byte("hashidx")
+	// BCDBInfoVersionKeyName is the name of the database key used to house
+	// the database version.  It is itself under the BCDBInfoBucketName
+	// bucket.
+	BCDBInfoVersionKeyName = []byte("version")
 
-	// HeightIndexBucketName is the name of the db bucket used to house to
-	// the block height -> block hash index.
-	HeightIndexBucketName = []byte("heightidx")
+	// BCDBInfoCompressionVersionKeyName is the name of the database key
+	// used to house the database compression version.  It is itself under
+	// the BCDBInfoBucketName bucket.
+	BCDBInfoCompressionVersionKeyName = []byte("compver")
+
+	// BCDBInfoBlockIndexVersionKeyName is the name of the database key
+	// used to house the database block index version.  It is itself under
+	// the BCDBInfoBucketName bucket.
+	BCDBInfoBlockIndexVersionKeyName = []byte("bidxver")
+
+	// BCDBInfoCreatedKeyName is the name of the database key used to house
+	// date the database was created.  It is itself under the
+	// BCDBInfoBucketName bucket.
+	BCDBInfoCreatedKeyName = []byte("created")
 
 	// ChainStateKeyName is the name of the db key used to store the best
 	// chain state.
@@ -36,4 +47,9 @@ var (
 	// UtxoSetBucketName is the name of the db bucket used to house the
 	// unspent transaction output set.
 	UtxoSetBucketName = []byte("utxoset")
+
+	// BlockIndexBucketName is the name of the db bucket used to house the
+	// block index which consists of metadata for all known blocks both in
+	// the main chain and on side chains.
+	BlockIndexBucketName = []byte("blockidx")
 )

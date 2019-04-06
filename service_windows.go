@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/winsvc/eventlog"
 	"github.com/btcsuite/winsvc/mgr"
 	"github.com/btcsuite/winsvc/svc"
+	"github.com/decred/dcrd/internal/version"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 	svcDisplayName = "Dcrd Service"
 
 	// svcDesc is the description of the service.
-	svcDesc = "Downloads and stays synchronized with the decred block " +
+	svcDesc = "Downloads and stays synchronized with the Decred block " +
 		"chain and provides chain services to applications."
 )
 
@@ -37,7 +38,7 @@ var elog *eventlog.Log
 // been started to the Windows event log.
 func logServiceStartOfDay(srvr *server) {
 	var message string
-	message += fmt.Sprintf("Version %s\n", version())
+	message += fmt.Sprintf("Version %s\n", version.String())
 	message += fmt.Sprintf("Configuration directory: %s\n", cfg.HomeDir)
 	message += fmt.Sprintf("Configuration file: %s\n", cfg.ConfigFile)
 	message += fmt.Sprintf("Data directory: %s\n", cfg.DataDir)
@@ -157,12 +158,7 @@ func installService() error {
 	// messges instead of needing to create our own message catalog.
 	eventlog.Remove(svcName)
 	eventsSupported := uint32(eventlog.Error | eventlog.Warning | eventlog.Info)
-	err = eventlog.InstallAsEventCreate(svcName, eventsSupported)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return eventlog.InstallAsEventCreate(svcName, eventsSupported)
 }
 
 // removeService attempts to uninstall the dcrd service.  Typically this should
@@ -185,12 +181,7 @@ func removeService() error {
 	defer service.Close()
 
 	// Remove the service.
-	err = service.Delete()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return service.Delete()
 }
 
 // startService attempts to start the dcrd service.

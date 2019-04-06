@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -28,10 +28,6 @@ var (
 	// the overhead of creating it multiple times.
 	oneLsh256 = new(big.Int).Lsh(bigOne, 256)
 )
-
-// maxShift is the maximum shift for a difficulty that resets (e.g.
-// testnet difficulty).
-const maxShift = uint(256)
 
 // HashToBig converts a chainhash.Hash into a big.Int that can be used to
 // perform math comparisons.
@@ -67,7 +63,7 @@ func HashToBig(hash *chainhash.Hash) *big.Int {
 // The formula to calculate N is:
 // 	N = (-1^sign) * mantissa * 256^(exponent-3)
 //
-// This compact form is only used in decred to encode unsigned 256-bit numbers
+// This compact form is only used in Decred to encode unsigned 256-bit numbers
 // which represent difficulty targets, thus there really is not a need for a
 // sign bit, but it is implemented here to stay consistent with bitcoind.
 func CompactToBig(compact uint32) *big.Int {
@@ -168,8 +164,7 @@ func CalcWork(bits uint32) *big.Int {
 // can have given starting difficulty bits and a duration.  It is mainly used to
 // verify that claimed proof of work by a block is sane as compared to a
 // known good checkpoint.
-func (b *BlockChain) calcEasiestDifficulty(bits uint32,
-	duration time.Duration) uint32 {
+func (b *BlockChain) calcEasiestDifficulty(bits uint32, duration time.Duration) uint32 {
 	// Convert types used in the calculations below.
 	durationVal := int64(duration)
 	adjustmentFactor := big.NewInt(b.chainParams.RetargetAdjustmentFactor)
@@ -206,35 +201,25 @@ func (b *BlockChain) calcEasiestDifficulty(bits uint32,
 // did not have the special testnet minimum difficulty rule applied.
 //
 // This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) findPrevTestNetDifficulty(startNode *blockNode) (uint32, error) {
+func (b *BlockChain) findPrevTestNetDifficulty(startNode *blockNode) uint32 {
 	// Search backwards through the chain for the last block without
 	// the special rule applied.
 	blocksPerRetarget := b.chainParams.WorkDiffWindowSize *
 		b.chainParams.WorkDiffWindows
 	iterNode := startNode
 	for iterNode != nil && iterNode.height%blocksPerRetarget != 0 &&
-		iterNode.header.Bits == b.chainParams.PowLimitBits {
+		iterNode.bits == b.chainParams.PowLimitBits {
 
-		// Get the previous block node.  This function is used over
-		// simply accessing iterNode.parent directly as it will
-		// dynamically create previous block nodes as needed.  This
-		// helps allow only the pieces of the chain that are needed
-		// to remain in memory.
-		var err error
-		iterNode, err = b.getPrevNodeFromNode(iterNode)
-		if err != nil {
-			log.Errorf("getPrevNodeFromNode: %v", err)
-			return 0, err
-		}
+		iterNode = iterNode.parent
 	}
 
 	// Return the found difficulty or the minimum difficulty if no
 	// appropriate block was found.
 	lastBits := b.chainParams.PowLimitBits
 	if iterNode != nil {
-		lastBits = iterNode.header.Bits
+		lastBits = iterNode.bits
 	}
-	return lastBits, nil
+	return lastBits
 }
 
 // calcNextRequiredDifficulty calculates the required difficulty for the block
@@ -242,19 +227,11 @@ func (b *BlockChain) findPrevTestNetDifficulty(startNode *blockNode) (uint32, er
 // This function differs from the exported CalcNextRequiredDifficulty in that
 // the exported version uses the current best chain as the previous block node
 // while this function accepts any block node.
-//
-// This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
-	newBlockTime time.Time) (uint32, error) {
-	// Genesis block.
-	if curNode == nil {
-		return b.chainParams.PowLimitBits, nil
-	}
-
+func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode, newBlockTime time.Time) (uint32, error) {
 	// Get the old difficulty; if we aren't at a block height where it changes,
 	// just return this.
-	oldDiff := curNode.header.Bits
-	oldDiffBig := CompactToBig(curNode.header.Bits)
+	oldDiff := curNode.bits
+	oldDiffBig := CompactToBig(curNode.bits)
 
 	// We're not at a retarget point, return the oldDiff.
 	if (curNode.height+1)%b.chainParams.WorkDiffWindowSize != 0 {
@@ -264,41 +241,17 @@ func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
 		if b.chainParams.ReduceMinDifficulty {
 			// Return minimum difficulty when more than the desired
 			// amount of time has elapsed without mining a block.
-			reductionTime := b.chainParams.MinDiffReductionTime
-			allowMinTime := curNode.header.Timestamp.Add(reductionTime)
-
-			// For every extra target timespan that passes, we halve the
-			// difficulty.
-			if newBlockTime.After(allowMinTime) {
-				timePassed := newBlockTime.Sub(curNode.header.Timestamp)
-				timePassed -= b.chainParams.MinDiffReductionTime
-				shifts := uint((timePassed / b.chainParams.TargetTimePerBlock) + 1)
-
-				// Scale the difficulty with time passed.
-				oldTarget := CompactToBig(curNode.header.Bits)
-				newTarget := new(big.Int)
-				if shifts < maxShift {
-					newTarget.Lsh(oldTarget, shifts)
-				} else {
-					newTarget.Set(oneLsh256)
-				}
-
-				// Limit new value to the proof of work limit.
-				if newTarget.Cmp(b.chainParams.PowLimit) > 0 {
-					newTarget.Set(b.chainParams.PowLimit)
-				}
-
-				return BigToCompact(newTarget), nil
+			reductionTime := int64(b.chainParams.MinDiffReductionTime /
+				time.Second)
+			allowMinTime := curNode.timestamp + reductionTime
+			if newBlockTime.Unix() > allowMinTime {
+				return b.chainParams.PowLimitBits, nil
 			}
 
 			// The block was mined within the desired timeframe, so
 			// return the difficulty for the last block which did
 			// not have the special minimum difficulty rule applied.
-			prevBits, err := b.findPrevTestNetDifficulty(curNode)
-			if err != nil {
-				return 0, err
-			}
-			return prevBits, nil
+			return b.findPrevTestNetDifficulty(curNode), nil
 		}
 
 		return oldDiff, nil
@@ -306,9 +259,9 @@ func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
 
 	// Declare some useful variables.
 	RAFBig := big.NewInt(b.chainParams.RetargetAdjustmentFactor)
-	nextDiffBigMin := CompactToBig(curNode.header.Bits)
+	nextDiffBigMin := CompactToBig(curNode.bits)
 	nextDiffBigMin.Div(nextDiffBigMin, RAFBig)
-	nextDiffBigMax := CompactToBig(curNode.header.Bits)
+	nextDiffBigMax := CompactToBig(curNode.bits)
 	nextDiffBigMax.Mul(nextDiffBigMax, RAFBig)
 
 	alpha := b.chainParams.WorkDiffAlpha
@@ -323,27 +276,28 @@ func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
 
 	// Regress through all of the previous blocks and store the percent changes
 	// per window period; use bigInts to emulate 64.32 bit fixed point.
+	var olderTime, windowPeriod int64
+	var weights uint64
 	oldNode := curNode
-	windowPeriod := int64(0)
-	weights := uint64(0)
-	recentTime := curNode.header.Timestamp.UnixNano()
-	olderTime := int64(0)
+	recentTime := curNode.timestamp
 
 	for i := int64(0); ; i++ {
 		// Store and reset after reaching the end of every window period.
 		if i%b.chainParams.WorkDiffWindowSize == 0 && i != 0 {
-			olderTime = oldNode.header.Timestamp.UnixNano()
+			olderTime = oldNode.timestamp
 			timeDifference := recentTime - olderTime
 
 			// Just assume we're at the target (no change) if we've
 			// gone all the way back to the genesis block.
 			if oldNode.height == 0 {
-				timeDifference = int64(b.chainParams.TargetTimespan)
+				timeDifference = int64(b.chainParams.TargetTimespan /
+					time.Second)
 			}
 
 			timeDifBig := big.NewInt(timeDifference)
 			timeDifBig.Lsh(timeDifBig, 32) // Add padding
-			targetTemp := big.NewInt(int64(b.chainParams.TargetTimespan))
+			targetTemp := big.NewInt(int64(b.chainParams.TargetTimespan /
+				time.Second))
 
 			windowAdjusted := targetTemp.Div(timeDifBig, targetTemp)
 
@@ -368,22 +322,10 @@ func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
 			break // Exit for loop when we hit the end.
 		}
 
-		// Get the previous block node.  This function is used over
-		// simply accessing firstNode.parent directly as it will
-		// dynamically create previous block nodes as needed.  This
-		// helps allow only the pieces of the chain that are needed
-		// to remain in memory.
-		var err error
-		tempNode := oldNode
-		oldNode, err = b.getPrevNodeFromNode(oldNode)
-		if err != nil {
-			return 0, err
-		}
-
-		// If we're at the genesis block, reset the oldNode
-		// so that it stays at the genesis block.
-		if oldNode == nil {
-			oldNode = tempNode
+		// Get the previous node while staying at the genesis block as
+		// needed.
+		if oldNode.parent != nil {
+			oldNode = oldNode.parent
 		}
 	}
 
@@ -427,7 +369,7 @@ func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
 	// precision.
 	nextDiffBits := BigToCompact(nextDiffBig)
 	log.Debugf("Difficulty retarget at block height %d", curNode.height+1)
-	log.Debugf("Old target %08x (%064x)", curNode.header.Bits, oldDiffBig)
+	log.Debugf("Old target %08x (%064x)", curNode.bits, oldDiffBig)
 	log.Debugf("New target %08x (%064x)", nextDiffBits, CompactToBig(nextDiffBits))
 
 	return nextDiffBits, nil
@@ -437,12 +379,10 @@ func (b *BlockChain) calcNextRequiredDifficulty(curNode *blockNode,
 // given with the passed hash along with the given timestamp.
 //
 // This function is NOT safe for concurrent access.
-func (b *BlockChain) CalcNextRequiredDiffFromNode(hash *chainhash.Hash,
-	timestamp time.Time) (uint32, error) {
-	// Fetch the block to get the difficulty for.
-	node, err := b.findNode(hash, maxSearchDepth)
-	if err != nil {
-		return 0, err
+func (b *BlockChain) CalcNextRequiredDiffFromNode(hash *chainhash.Hash, timestamp time.Time) (uint32, error) {
+	node := b.index.LookupNode(hash)
+	if node == nil {
+		return 0, fmt.Errorf("block %s is not known", hash)
 	}
 
 	return b.calcNextRequiredDifficulty(node, timestamp)
@@ -453,10 +393,9 @@ func (b *BlockChain) CalcNextRequiredDiffFromNode(hash *chainhash.Hash,
 // rules.
 //
 // This function is safe for concurrent access.
-func (b *BlockChain) CalcNextRequiredDifficulty(timestamp time.Time) (uint32,
-	error) {
+func (b *BlockChain) CalcNextRequiredDifficulty(timestamp time.Time) (uint32, error) {
 	b.chainLock.Lock()
-	difficulty, err := b.calcNextRequiredDifficulty(b.bestNode, timestamp)
+	difficulty, err := b.calcNextRequiredDifficulty(b.bestChain.Tip(), timestamp)
 	b.chainLock.Unlock()
 	return difficulty, err
 }
@@ -521,7 +460,7 @@ func (b *BlockChain) calcNextRequiredStakeDifficultyV1(curNode *blockNode) (int6
 
 	// Get the old difficulty; if we aren't at a block height where it changes,
 	// just return this.
-	oldDiff := curNode.header.SBits
+	oldDiff := curNode.sbits
 	if (curNode.height+1)%b.chainParams.StakeDiffWindowSize != 0 {
 		return oldDiff, nil
 	}
@@ -548,7 +487,7 @@ func (b *BlockChain) calcNextRequiredStakeDifficultyV1(curNode *blockNode) (int6
 			// First adjust based on ticketPoolSize. Skew the difference
 			// in ticketPoolSize by max adjustment factor to help
 			// weight ticket pool size versus tickets per block.
-			poolSizeSkew := (int64(oldNode.header.PoolSize)-
+			poolSizeSkew := (int64(oldNode.poolSize)-
 				targetForTicketPool)*TicketPoolWeight + targetForTicketPool
 
 			// Don't let this be negative or zero.
@@ -582,18 +521,10 @@ func (b *BlockChain) calcNextRequiredStakeDifficultyV1(curNode *blockNode) (int6
 			break // Exit for loop when we hit the end.
 		}
 
-		// Get the previous block node.
-		var err error
-		tempNode := oldNode
-		oldNode, err = b.getPrevNodeFromNode(oldNode)
-		if err != nil {
-			return 0, err
-		}
-
-		// If we're at the genesis block, reset the oldNode
-		// so that it stays at the genesis block.
-		if oldNode == nil {
-			oldNode = tempNode
+		// Get the previous node while staying at the genesis block as
+		// needed.
+		if oldNode.parent != nil {
+			oldNode = oldNode.parent
 		}
 	}
 
@@ -641,7 +572,7 @@ func (b *BlockChain) calcNextRequiredStakeDifficultyV1(curNode *blockNode) (int6
 
 	for i := int64(0); ; i++ {
 		// Add the fresh stake into the store for this window period.
-		windowFreshStake += int64(oldNode.header.FreshStake)
+		windowFreshStake += int64(oldNode.freshStake)
 
 		// Store and reset after reaching the end of every window period.
 		if (i+1)%b.chainParams.StakeDiffWindowSize == 0 {
@@ -677,18 +608,10 @@ func (b *BlockChain) calcNextRequiredStakeDifficultyV1(curNode *blockNode) (int6
 			break // Exit for loop when we hit the end.
 		}
 
-		// Get the previous block node.
-		var err error
-		tempNode := oldNode
-		oldNode, err = b.getPrevNodeFromNode(oldNode)
-		if err != nil {
-			return 0, err
-		}
-
-		// If we're at the genesis block, reset the oldNode
-		// so that it stays at the genesis block.
-		if oldNode == nil {
-			oldNode = tempNode
+		// Get the previous node while staying at the genesis block as
+		// needed.
+		if oldNode.parent != nil {
+			oldNode = oldNode.parent
 		}
 	}
 
@@ -788,28 +711,16 @@ func estimateSupply(params *chaincfg.Params, height int64) int64 {
 // sumPurchasedTickets returns the sum of the number of tickets purchased in the
 // most recent specified number of blocks from the point of view of the passed
 // node.
-//
-// This function MUST be called with the chain state lock held (for writes).
-func (b *BlockChain) sumPurchasedTickets(startNode *blockNode, numToSum int64) (int64, error) {
+func (b *BlockChain) sumPurchasedTickets(startNode *blockNode, numToSum int64) int64 {
 	var numPurchased int64
 	for node, numTraversed := startNode, int64(0); node != nil &&
 		numTraversed < numToSum; numTraversed++ {
 
-		numPurchased += int64(node.header.FreshStake)
-
-		// Get the previous block node.  This function is used over
-		// simply accessing iterNode.parent directly as it will
-		// dynamically create previous block nodes as needed.  This
-		// helps allow only the pieces of the chain that are needed
-		// to remain in memory.
-		var err error
-		node, err = b.getPrevNodeFromNode(node)
-		if err != nil {
-			return 0, err
-		}
+		numPurchased += int64(node.freshStake)
+		node = node.parent
 	}
 
-	return numPurchased, nil
+	return numPurchased
 }
 
 // calcNextStakeDiffV2 calculates the next stake difficulty for the given set
@@ -851,7 +762,7 @@ func calcNextStakeDiffV2(params *chaincfg.Params, nextHeight, curDiff, prevPoolS
 	//          targetPoolSize / votesPerBlock
 	//
 	// In order to avoid the need to perform floating point math which could
-	// be problematic across langauges due to uncertainty in floating point
+	// be problematic across languages due to uncertainty in floating point
 	// math libs, this is further simplified to integer math as follows:
 	//
 	//                   curDiff * curPoolSizeAll^2
@@ -907,7 +818,7 @@ func (b *BlockChain) calcNextRequiredStakeDifficultyV2(curNode *blockNode) (int6
 	// Return the previous block's difficulty requirements if the next block
 	// is not at a difficulty retarget interval.
 	intervalSize := b.chainParams.StakeDiffWindowSize
-	curDiff := curNode.header.SBits
+	curDiff := curNode.sbits
 	if nextHeight%intervalSize != 0 {
 		return curDiff, nil
 	}
@@ -922,19 +833,13 @@ func (b *BlockChain) calcNextRequiredStakeDifficultyV2(curNode *blockNode) (int6
 	// originally calculated.
 	var prevPoolSize int64
 	prevRetargetHeight := nextHeight - intervalSize - 1
-	prevRetargetNode, err := b.ancestorNode(curNode, prevRetargetHeight)
-	if err != nil {
-		return 0, err
-	}
+	prevRetargetNode := curNode.Ancestor(prevRetargetHeight)
 	if prevRetargetNode != nil {
-		prevPoolSize = int64(prevRetargetNode.header.PoolSize)
+		prevPoolSize = int64(prevRetargetNode.poolSize)
 	}
 	ticketMaturity := int64(b.chainParams.TicketMaturity)
-	prevImmatureTickets, err := b.sumPurchasedTickets(prevRetargetNode,
+	prevImmatureTickets := b.sumPurchasedTickets(prevRetargetNode,
 		ticketMaturity)
-	if err != nil {
-		return 0, err
-	}
 
 	// Return the existing ticket price for the first few intervals to avoid
 	// division by zero and encourage initial pool population.
@@ -944,26 +849,12 @@ func (b *BlockChain) calcNextRequiredStakeDifficultyV2(curNode *blockNode) (int6
 	}
 
 	// Count the number of currently immature tickets.
-	immatureTickets, err := b.sumPurchasedTickets(curNode, ticketMaturity)
-	if err != nil {
-		return 0, err
-	}
+	immatureTickets := b.sumPurchasedTickets(curNode, ticketMaturity)
 
 	// Calculate and return the final next required difficulty.
-	curPoolSizeAll := int64(curNode.header.PoolSize) + immatureTickets
+	curPoolSizeAll := int64(curNode.poolSize) + immatureTickets
 	return calcNextStakeDiffV2(b.chainParams, nextHeight, curDiff,
 		prevPoolSizeAll, curPoolSizeAll), nil
-}
-
-// sdiffAlgoDeploymentVersion returns the deployment vesion for the stake
-// difficulty algorithm change as defined in DCP0001 for the provided network.
-//
-// This function is safe for concurrent access.
-func sdiffAlgoDeploymentVersion(network wire.CurrencyNet) uint32 {
-	if network != wire.MainNet {
-		return 5
-	}
-	return 4
 }
 
 // calcNextRequiredStakeDifficulty calculates the required stake difficulty for
@@ -976,15 +867,22 @@ func sdiffAlgoDeploymentVersion(network wire.CurrencyNet) uint32 {
 //
 // This function MUST be called with the chain state lock held (for writes).
 func (b *BlockChain) calcNextRequiredStakeDifficulty(curNode *blockNode) (int64, error) {
+	// Determine the correct deployment version for the new stake difficulty
+	// algorithm consensus vote or treat it as active when voting is not enabled
+	// for the current network.
+	const deploymentID = chaincfg.VoteIDSDiffAlgorithm
+	deploymentVer, ok := b.deploymentVers[deploymentID]
+	if !ok {
+		return b.calcNextRequiredStakeDifficultyV2(curNode)
+	}
+
 	// Use the new stake difficulty algorithm if the stake vote for the new
 	// algorithm agenda is active.
 	//
 	// NOTE: The choice field of the return threshold state is not examined
 	// here because there is only one possible choice that can be active
 	// for the agenda, which is yes, so there is no need to check it.
-	deploymentVersion := sdiffAlgoDeploymentVersion(b.chainParams.Net)
-	state, err := b.deploymentState(curNode, deploymentVersion,
-		chaincfg.VoteIDSDiffAlgorithm)
+	state, err := b.deploymentState(curNode, deploymentVer, deploymentID)
 	if err != nil {
 		return 0, err
 	}
@@ -1003,7 +901,7 @@ func (b *BlockChain) calcNextRequiredStakeDifficulty(curNode *blockNode) (int64,
 // This function is safe for concurrent access.
 func (b *BlockChain) CalcNextRequiredStakeDifficulty() (int64, error) {
 	b.chainLock.Lock()
-	nextDiff, err := b.calcNextRequiredStakeDifficulty(b.bestNode)
+	nextDiff, err := b.calcNextRequiredStakeDifficulty(b.bestChain.Tip())
 	b.chainLock.Unlock()
 	return nextDiff, err
 }
@@ -1038,7 +936,7 @@ func (b *BlockChain) estimateNextStakeDifficultyV1(curNode *blockNode, ticketsIn
 	// Create a fake blockchain on top of the current best node with
 	// the number of freshly purchased tickets as indicated by the
 	// user.
-	oldDiff := curNode.header.SBits
+	oldDiff := curNode.sbits
 	topNode := curNode
 	if (curNode.height+1)%b.chainParams.StakeDiffWindowSize != 0 {
 		nextAdjHeight := ((curNode.height /
@@ -1065,13 +963,13 @@ func (b *BlockChain) estimateNextStakeDifficultyV1(curNode *blockNode, ticketsIn
 		// used to calculate the next difficulty below.
 		ticketsToInsert := ticketsInWindow
 		for i := curNode.height + 1; i < nextAdjHeight; i++ {
-			emptyHeader := new(wire.BlockHeader)
+			var emptyHeader wire.BlockHeader
 			emptyHeader.Height = uint32(i)
 
 			// User a constant pool size for estimate, since
 			// this has much less fluctuation than freshStake.
 			// TODO Use a better pool size estimate?
-			emptyHeader.PoolSize = curNode.header.PoolSize
+			emptyHeader.PoolSize = curNode.poolSize
 
 			// Insert the fake fresh stake into each block,
 			// decrementing the amount we need to use each
@@ -1088,18 +986,7 @@ func (b *BlockChain) estimateNextStakeDifficultyV1(curNode *blockNode, ticketsIn
 			// Connect the header.
 			emptyHeader.PrevBlock = topNode.hash
 
-			// Make up a node hash.
-			hB, err := emptyHeader.Bytes()
-			if err != nil {
-				return 0, err
-			}
-			emptyHeaderHash := chainhash.HashH(hB)
-
-			thisNode := new(blockNode)
-			thisNode.header = *emptyHeader
-			thisNode.hash = emptyHeaderHash
-			thisNode.height = i
-			thisNode.parent = topNode
+			thisNode := newBlockNode(&emptyHeader, topNode)
 			topNode = thisNode
 		}
 	}
@@ -1126,7 +1013,7 @@ func (b *BlockChain) estimateNextStakeDifficultyV1(curNode *blockNode, ticketsIn
 			// First adjust based on ticketPoolSize. Skew the difference
 			// in ticketPoolSize by max adjustment factor to help
 			// weight ticket pool size versus tickets per block.
-			poolSizeSkew := (int64(oldNode.header.PoolSize)-
+			poolSizeSkew := (int64(oldNode.poolSize)-
 				targetForTicketPool)*TicketPoolWeight + targetForTicketPool
 
 			// Don't let this be negative or zero.
@@ -1160,18 +1047,10 @@ func (b *BlockChain) estimateNextStakeDifficultyV1(curNode *blockNode, ticketsIn
 			break // Exit for loop when we hit the end.
 		}
 
-		// Get the previous block node.
-		var err error
-		tempNode := oldNode
-		oldNode, err = b.getPrevNodeFromNode(oldNode)
-		if err != nil {
-			return 0, err
-		}
-
-		// If we're at the genesis block, reset the oldNode
-		// so that it stays at the genesis block.
-		if oldNode == nil {
-			oldNode = tempNode
+		// Get the previous node while staying at the genesis block as
+		// needed.
+		if oldNode.parent != nil {
+			oldNode = oldNode.parent
 		}
 	}
 
@@ -1219,7 +1098,7 @@ func (b *BlockChain) estimateNextStakeDifficultyV1(curNode *blockNode, ticketsIn
 
 	for i := int64(0); ; i++ {
 		// Add the fresh stake into the store for this window period.
-		windowFreshStake += int64(oldNode.header.FreshStake)
+		windowFreshStake += int64(oldNode.freshStake)
 
 		// Store and reset after reaching the end of every window period.
 		if (i+1)%b.chainParams.StakeDiffWindowSize == 0 {
@@ -1255,18 +1134,10 @@ func (b *BlockChain) estimateNextStakeDifficultyV1(curNode *blockNode, ticketsIn
 			break // Exit for loop when we hit the end.
 		}
 
-		// Get the previous block node.
-		var err error
-		tempNode := oldNode
-		oldNode, err = b.getPrevNodeFromNode(oldNode)
-		if err != nil {
-			return 0, err
-		}
-
-		// If we're at the genesis block, reset the oldNode
-		// so that it stays at the genesis block.
-		if oldNode == nil {
-			oldNode = tempNode
+		// Get the previous node while staying at the genesis block as
+		// needed.
+		if oldNode.parent != nil {
+			oldNode = oldNode.parent
 		}
 	}
 
@@ -1339,21 +1210,10 @@ func (b *BlockChain) estimateNextStakeDifficultyV2(curNode *blockNode, newTicket
 	if curNode != nil {
 		curHeight = curNode.height
 	}
+	ticketMaturity := int64(b.chainParams.TicketMaturity)
 	intervalSize := b.chainParams.StakeDiffWindowSize
 	blocksUntilRetarget := intervalSize - curHeight%intervalSize
 	nextRetargetHeight := curHeight + blocksUntilRetarget
-
-	// This code really should be updated to work with retarget interval
-	// size greater than the ticket maturity, such as is the case on
-	// testnet, but since it does not currently work under that scenario,
-	// return an error rather than incorrect results.
-	ticketMaturity := int64(b.chainParams.TicketMaturity)
-	if intervalSize > ticketMaturity {
-		return 0, fmt.Errorf("stake difficulty estimation does not "+
-			"currently work when the retarget interval is larger "+
-			"than the ticket maturity (interval %d, ticket "+
-			"maturity %d)", intervalSize, ticketMaturity)
-	}
 
 	// Calculate the maximum possible number of tickets that could be sold
 	// in the remainder of the interval and potentially override the number
@@ -1390,52 +1250,74 @@ func (b *BlockChain) estimateNextStakeDifficultyV2(curNode *blockNode, newTicket
 	// originally calculated.
 	var prevPoolSize int64
 	prevRetargetHeight := nextRetargetHeight - intervalSize - 1
-	prevRetargetNode, err := b.ancestorNode(curNode, prevRetargetHeight)
-	if err != nil {
-		return 0, err
-	}
+	prevRetargetNode := curNode.Ancestor(prevRetargetHeight)
 	if prevRetargetNode != nil {
-		prevPoolSize = int64(prevRetargetNode.header.PoolSize)
+		prevPoolSize = int64(prevRetargetNode.poolSize)
 	}
-	prevImmatureTickets, err := b.sumPurchasedTickets(prevRetargetNode,
+	prevImmatureTickets := b.sumPurchasedTickets(prevRetargetNode,
 		ticketMaturity)
-	if err != nil {
-		return 0, err
-	}
 
 	// Return the existing ticket price for the first few intervals to avoid
 	// division by zero and encourage initial pool population.
-	curDiff := curNode.header.SBits
+	curDiff := curNode.sbits
 	prevPoolSizeAll := prevPoolSize + prevImmatureTickets
 	if prevPoolSizeAll == 0 {
 		return curDiff, nil
 	}
 
 	// Calculate the number of tickets that will still be immature at the
-	// next retarget based on the known data.
+	// next retarget based on the known (non-estimated) data.
+	//
+	// Note that when the interval size is larger than the ticket maturity,
+	// the current height might be before the maturity floor (the point
+	// after which the remaining tickets will remain immature).  There are
+	// therefore no possible remaining immature tickets from the blocks that
+	// are not being estimated in that case.
+	var remainingImmatureTickets int64
 	nextMaturityFloor := nextRetargetHeight - ticketMaturity - 1
-	remainingImmatureTickets, err := b.sumPurchasedTickets(curNode,
-		curHeight-nextMaturityFloor)
-	if err != nil {
-		return 0, err
+	if curHeight > nextMaturityFloor {
+		remainingImmatureTickets = b.sumPurchasedTickets(curNode,
+			curHeight-nextMaturityFloor)
+	}
+
+	// Add the number of tickets that will still be immature at the next
+	// retarget based on the estimated data.
+	maxImmatureTickets := ticketMaturity * maxTicketsPerBlock
+	if newTickets > maxImmatureTickets {
+		remainingImmatureTickets += maxImmatureTickets
+	} else {
+		remainingImmatureTickets += newTickets
 	}
 
 	// Calculate the number of tickets that will mature in the remainder of
-	// the interval.
+	// the interval based on the known (non-estimated) data.
 	//
 	// NOTE: The pool size in the block headers does not include the tickets
 	// maturing at the height in which they mature since they are not
 	// eligible for selection until the next block, so exclude them by
 	// starting one block before the next maturity floor.
-	nextMaturityFloorNode, err := b.ancestorNode(curNode, nextMaturityFloor-1)
-	if err != nil {
-		return 0, err
+	finalMaturingHeight := nextMaturityFloor - 1
+	if finalMaturingHeight > curHeight {
+		finalMaturingHeight = curHeight
 	}
-	curMaturityFloor := curHeight - ticketMaturity
-	maturingTickets, err := b.sumPurchasedTickets(nextMaturityFloorNode,
-		nextMaturityFloor-curMaturityFloor)
-	if err != nil {
-		return 0, err
+	finalMaturingNode := curNode.Ancestor(finalMaturingHeight)
+	firstMaturingHeight := curHeight - ticketMaturity
+	maturingTickets := b.sumPurchasedTickets(finalMaturingNode,
+		finalMaturingHeight-firstMaturingHeight+1)
+
+	// Add the number of tickets that will mature based on the estimated data.
+	//
+	// Note that when the ticket maturity is greater than or equal to the
+	// interval size, the current height will always be after the maturity
+	// floor.  There are therefore no possible maturing estimated tickets
+	// in that case.
+	if curHeight < nextMaturityFloor {
+		maturingEstimateNodes := nextMaturityFloor - curHeight - 1
+		maturingEstimatedTickets := maxTicketsPerBlock * maturingEstimateNodes
+		if maturingEstimatedTickets > newTickets {
+			maturingEstimatedTickets = newTickets
+		}
+		maturingTickets += maturingEstimatedTickets
 	}
 
 	// Calculate the number of votes that will occur during the remainder of
@@ -1452,10 +1334,9 @@ func (b *BlockChain) estimateNextStakeDifficultyV2(curNode *blockNode, newTicket
 	}
 
 	// Calculate what the pool size would be as of the next interval.
-	curPoolSize := int64(curNode.header.PoolSize)
+	curPoolSize := int64(curNode.poolSize)
 	estimatedPoolSize := curPoolSize + maturingTickets - pendingVotes
-	estimatedImmatureTickets := remainingImmatureTickets + newTickets
-	estimatedPoolSizeAll := estimatedPoolSize + estimatedImmatureTickets
+	estimatedPoolSizeAll := estimatedPoolSize + remainingImmatureTickets
 
 	// Calculate and return the final estimated difficulty.
 	return calcNextStakeDiffV2(b.chainParams, nextRetargetHeight, curDiff,
@@ -1476,15 +1357,22 @@ func (b *BlockChain) estimateNextStakeDifficultyV2(curNode *blockNode, newTicket
 //
 // This function MUST be called with the chain state lock held (for writes).
 func (b *BlockChain) estimateNextStakeDifficulty(curNode *blockNode, newTickets int64, useMaxTickets bool) (int64, error) {
+	// Determine the correct deployment version for the new stake difficulty
+	// algorithm consensus vote or treat it as active when voting is not enabled
+	// for the current network.
+	const deploymentID = chaincfg.VoteIDSDiffAlgorithm
+	deploymentVer, ok := b.deploymentVers[deploymentID]
+	if !ok {
+		return b.calcNextRequiredStakeDifficultyV2(curNode)
+	}
+
 	// Use the new stake difficulty algorithm if the stake vote for the new
 	// algorithm agenda is active.
 	//
 	// NOTE: The choice field of the return threshold state is not examined
 	// here because there is only one possible choice that can be active
 	// for the agenda, which is yes, so there is no need to check it.
-	deploymentVersion := sdiffAlgoDeploymentVersion(b.chainParams.Net)
-	state, err := b.deploymentState(curNode, deploymentVersion,
-		chaincfg.VoteIDSDiffAlgorithm)
+	state, err := b.deploymentState(curNode, deploymentVer, deploymentID)
 	if err != nil {
 		return 0, err
 	}
@@ -1507,8 +1395,8 @@ func (b *BlockChain) estimateNextStakeDifficulty(curNode *blockNode, newTickets 
 // This function is safe for concurrent access.
 func (b *BlockChain) EstimateNextStakeDifficulty(newTickets int64, useMaxTickets bool) (int64, error) {
 	b.chainLock.Lock()
-	estimate, err := b.estimateNextStakeDifficulty(b.bestNode, newTickets,
-		useMaxTickets)
+	estimate, err := b.estimateNextStakeDifficulty(b.bestChain.Tip(),
+		newTickets, useMaxTickets)
 	b.chainLock.Unlock()
 	return estimate, err
 }

@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -22,7 +22,7 @@ import (
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/database"
 	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/mempool"
+	"github.com/decred/dcrd/mempool/v2"
 	"github.com/decred/dcrd/wire"
 )
 
@@ -53,14 +53,20 @@ const (
 	// hashes to store in memory.
 	maxRequestedTxns = wire.MaxInvPerMsg
 
-	// maxLotteryDataBlockDelta is maximum number of blocks from the current
-	// best block to cut off block lottery calculation data for.  Below
-	// bestBlockHeight-maxLotteryDataBlockDelta, block lottery data will
-	// not be calculated.  This helps to reduce exhaustion attacks that
-	// might arise from sending old orphan blocks and forcing nodes to
-	// do expensive lottery data look ups for these blocks.  It is
-	// equivalent to 24 hours of work on mainnet.
-	maxLotteryDataBlockDelta = 288
+	// maxReorgDepthNotify specifies the maximum reorganization depth for
+	// which winning ticket notifications will be sent over RPC.  The reorg
+	// depth is the number of blocks that would be reorganized out of the
+	// current best chain if a side chain being considered for notifications
+	// were to ultimately be extended to be longer than the current one.
+	//
+	// In effect, this helps to prevent large reorgs by refusing to send the
+	// winning ticket information to RPC clients, such as voting wallets,
+	// which depend on it to cast votes.
+	//
+	// This check also doubles to help reduce exhaustion attacks that could
+	// otherwise arise from sending old orphan blocks and forcing nodes to
+	// do expensive lottery data calculations for them.
+	maxReorgDepthNotify = 6
 )
 
 // zeroHash is the zero value hash (all zeros).  It is defined as a convenience.
@@ -71,21 +77,21 @@ type newPeerMsg struct {
 	peer *serverPeer
 }
 
-// blockMsg packages a decred block message and the peer it came from together
+// blockMsg packages a Decred block message and the peer it came from together
 // so the block handler has access to that information.
 type blockMsg struct {
 	block *dcrutil.Block
 	peer  *serverPeer
 }
 
-// invMsg packages a decred inv message and the peer it came from together
+// invMsg packages a Decred inv message and the peer it came from together
 // so the block handler has access to that information.
 type invMsg struct {
 	inv  *wire.MsgInv
 	peer *serverPeer
 }
 
-// headersMsg packages a decred headers message and the peer it came from
+// headersMsg packages a Decred headers message and the peer it came from
 // together so the block handler has access to that information.
 type headersMsg struct {
 	headers *wire.MsgHeaders
@@ -97,7 +103,7 @@ type donePeerMsg struct {
 	peer *serverPeer
 }
 
-// txMsg packages a decred tx message and the peer it came from together
+// txMsg packages a Decred tx message and the peer it came from together
 // so the block handler has access to that information.
 type txMsg struct {
 	tx   *dcrutil.Tx
@@ -163,19 +169,18 @@ type calcNextReqStakeDifficultyMsg struct {
 	reply chan calcNextReqStakeDifficultyResponse
 }
 
-// getGenerationResponse is a response sent to the reply channel of a
-// getGenerationMsg query.
-type getGenerationResponse struct {
+// tipGenerationResponse is a response sent to the reply channel of a
+// tipGenerationMsg query.
+type tipGenerationResponse struct {
 	hashes []chainhash.Hash
 	err    error
 }
 
-// getGenerationMsg is a message type to be sent across the message
+// tipGenerationMsg is a message type to be sent across the message
 // channel for requesting the required the entire generation of a
 // block node.
-type getGenerationMsg struct {
-	hash  chainhash.Hash
-	reply chan getGenerationResponse
+type tipGenerationMsg struct {
+	reply chan tipGenerationResponse
 }
 
 // forceReorganizationResponse is a response sent to the reply channel of a
@@ -193,26 +198,12 @@ type forceReorganizationMsg struct {
 	reply      chan forceReorganizationResponse
 }
 
-// getTopBlockResponse is a response to the request for the block at HEAD of the
-// blockchain. We need to be able to obtain this from blockChain for mining
-// purposes.
-type getTopBlockResponse struct {
-	block *dcrutil.Block
-	err   error
-}
-
-// getTopBlockMsg is a message type to be sent across the message
-// channel for requesting the required stake difficulty of the next block.
-type getTopBlockMsg struct {
-	reply chan getTopBlockResponse
-}
-
 // processBlockResponse is a response sent to the reply channel of a
 // processBlockMsg.
 type processBlockResponse struct {
-	onMainChain bool
-	isOrphan    bool
-	err         error
+	forkLen  int64
+	isOrphan bool
+	err      error
 }
 
 // processBlockMsg is a message type to be sent across the message channel
@@ -249,14 +240,6 @@ type processTransactionMsg struct {
 // the currently connected peers.
 type isCurrentMsg struct {
 	reply chan bool
-}
-
-// pauseMsg is a message type to be sent across the message channel for
-// pausing the block manager.  This effectively provides the caller with
-// exclusive access over the manager until a receive is performed on the
-// unpause channel.
-type pauseMsg struct {
-	unpause <-chan struct{}
 }
 
 // getCurrentTemplateMsg handles a request for the current mining block template.
@@ -313,86 +296,6 @@ type headerNode struct {
 	hash   *chainhash.Hash
 }
 
-// chainState tracks the state of the best chain as blocks are inserted.  This
-// is done because blockchain is currently not safe for concurrent access and the
-// block manager is typically quite busy processing block and inventory.
-// Therefore, requesting this information from chain through the block manager
-// would not be anywhere near as efficient as simply updating it as each block
-// is inserted and protecting it with a mutex.
-type chainState struct {
-	sync.Mutex
-	newestHash          *chainhash.Hash
-	newestHeight        int64
-	nextFinalState      [6]byte
-	nextPoolSize        uint32
-	nextStakeDifficulty int64
-	winningTickets      []chainhash.Hash
-	missedTickets       []chainhash.Hash
-	curPrevHash         chainhash.Hash
-	pastMedianTime      time.Time
-	stakeVersion        uint32
-}
-
-// Best returns the block hash and height known for the tip of the best known
-// chain.
-//
-// This function is safe for concurrent access.
-func (c *chainState) Best() (*chainhash.Hash, int64) {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.newestHash, c.newestHeight
-}
-
-// NextWPO returns next winner, potential, and overflow for the current top block
-// of the blockchain.
-//
-// This function is safe for concurrent access.
-func (c *chainState) NextFinalState() [6]byte {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.nextFinalState
-}
-
-func (c *chainState) NextPoolSize() uint32 {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.nextPoolSize
-}
-
-// NextWinners returns the eligible SStx hashes to vote on the
-// next block as inputs for SSGen.
-//
-// This function is safe for concurrent access.
-func (c *chainState) NextWinners() []chainhash.Hash {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.winningTickets
-}
-
-// CurrentlyMissed returns the eligible SStx hashes that can be revoked.
-//
-// This function is safe for concurrent access.
-func (c *chainState) CurrentlyMissed() []chainhash.Hash {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.missedTickets
-}
-
-// GetTopPrevHash returns the current previous block hash.
-//
-// This function is safe for concurrent access.
-func (c *chainState) GetTopPrevHash() chainhash.Hash {
-	c.Lock()
-	defer c.Unlock()
-
-	return c.curPrevHash
-}
-
 // blockManager provides a concurrency safe block manager for handling all
 // incoming blocks.
 type blockManager struct {
@@ -408,7 +311,6 @@ type blockManager struct {
 	progressLogger      *blockProgressLogger
 	syncPeer            *serverPeer
 	msgChan             chan interface{}
-	chainState          chainState
 	wg                  sync.WaitGroup
 	quit                chan struct{}
 
@@ -423,11 +325,20 @@ type blockManager struct {
 	// yet for any given block, so notifications are never
 	// duplicated.
 	lotteryDataBroadcast      map[chainhash.Hash]struct{}
-	lotteryDataBroadcastMutex sync.Mutex
+	lotteryDataBroadcastMutex sync.RWMutex
 
 	cachedCurrentTemplate *BlockTemplate
 	cachedParentTemplate  *BlockTemplate
 	AggressiveMining      bool
+
+	// The following fields are used to filter duplicate block announcements.
+	announcedBlockMtx sync.Mutex
+	announcedBlock    *chainhash.Hash
+
+	// The following fields are used to track the height being synced to from
+	// peers.
+	syncHeightMtx sync.Mutex
+	syncHeight    int64
 }
 
 // resetHeaderState sets the headers-first mode state to values appropriate for
@@ -446,27 +357,11 @@ func (b *blockManager) resetHeaderState(newestHash *chainhash.Hash, newestHeight
 	}
 }
 
-// updateChainState updates the chain state associated with the block manager.
-// This allows fast access to chain information since blockchain is currently not
-// safe for concurrent access and the block manager is typically quite busy
-// processing block and inventory.
-func (b *blockManager) updateChainState(newestHash *chainhash.Hash,
-	newestHeight int64, finalState [6]byte, poolSize uint32,
-	nextStakeDiff int64, winningTickets []chainhash.Hash,
-	missedTickets []chainhash.Hash, curPrevHash chainhash.Hash) {
-
-	b.chainState.Lock()
-	defer b.chainState.Unlock()
-
-	b.chainState.newestHash = newestHash
-	b.chainState.newestHeight = newestHeight
-	b.chainState.pastMedianTime = b.chain.BestSnapshot().MedianTime
-	b.chainState.nextFinalState = finalState
-	b.chainState.nextPoolSize = poolSize
-	b.chainState.nextStakeDifficulty = nextStakeDiff
-	b.chainState.winningTickets = winningTickets
-	b.chainState.missedTickets = missedTickets
-	b.chainState.curPrevHash = curPrevHash
+// SyncHeight returns latest known block being synced to.
+func (b *blockManager) SyncHeight() int64 {
+	b.syncHeightMtx.Lock()
+	defer b.syncHeightMtx.Unlock()
+	return b.syncHeight
 }
 
 // findNextHeaderCheckpoint returns the next checkpoint after the passed height.
@@ -530,9 +425,13 @@ func (b *blockManager) startSync(peers *list.List) {
 			continue
 		}
 
-		// TODO(davec): Use a better algorithm to choose the best peer.
-		// For now, just pick the first available candidate.
-		bestPeer = sp
+		// the best sync candidate is the most updated peer
+		if bestPeer == nil {
+			bestPeer = sp
+		}
+		if bestPeer.LastBlock() < sp.LastBlock() {
+			bestPeer = sp
+		}
 	}
 
 	// Start syncing from the best peer if one was selected.
@@ -592,6 +491,9 @@ func (b *blockManager) startSync(peers *list.List) {
 			}
 		}
 		b.syncPeer = bestPeer
+		b.syncHeightMtx.Lock()
+		b.syncHeight = bestPeer.LastBlock()
+		b.syncHeightMtx.Unlock()
 	} else {
 		bmgrLog.Warnf("No sync peer candidates available")
 	}
@@ -687,7 +589,7 @@ func (b *blockManager) handleDonePeerMsg(peers *list.List, sp *serverPeer) {
 		b.syncPeer = nil
 		if b.headersFirstMode {
 			best := b.chain.BestSnapshot()
-			b.resetHeaderState(best.Hash, best.Height)
+			b.resetHeaderState(&best.Hash, best.Height)
 		}
 		b.startSync(peers)
 	}
@@ -788,8 +690,7 @@ func (b *blockManager) current() bool {
 func (b *blockManager) checkBlockForHiddenVotes(block *dcrutil.Block) {
 	var votesFromBlock []*dcrutil.Tx
 	for _, stx := range block.STransactions() {
-		isSSGen, _ := stake.IsSSGen(stx.MsgTx())
-		if isSSGen {
+		if stake.IsSSGen(stx.MsgTx()) {
 			votesFromBlock = append(votesFromBlock, stx)
 		}
 	}
@@ -911,8 +812,7 @@ func (b *blockManager) checkBlockForHiddenVotes(block *dcrutil.Block) {
 		return
 	}
 	height := block.MsgBlock().Header.Height
-	opReturnPkScript, err := standardCoinbaseOpReturn(height,
-		[]uint64{0, 0, 0, random})
+	opReturnPkScript, err := standardCoinbaseOpReturn(height, random)
 	if err != nil {
 		// Stopping at this step will lead to a corrupted block template
 		// because the stake tree has already been manipulated, so throw
@@ -953,8 +853,6 @@ func (b *blockManager) checkBlockForHiddenVotes(block *dcrutil.Block) {
 	template.Block.Header.Voters = uint16(votesTotal)
 	template.Block.Header.StakeRoot = *smerkles[len(smerkles)-1]
 	template.Block.Header.Size = uint32(template.Block.SerializeSize())
-
-	return
 }
 
 // handleBlockMsg handles block messages from all peers.
@@ -1016,7 +914,7 @@ func (b *blockManager) handleBlockMsg(bmsg *blockMsg) {
 
 	// Process the block to include validation, best chain selection, orphan
 	// handling, etc.
-	onMainChain, isOrphan, err := b.chain.ProcessBlock(bmsg.block,
+	forkLen, isOrphan, err := b.chain.ProcessBlock(bmsg.block,
 		behaviorFlags)
 	if err != nil {
 		// When the error is a rule error, it means the block was simply
@@ -1083,50 +981,8 @@ func (b *blockManager) handleBlockMsg(bmsg *blockMsg) {
 		// When the block is not an orphan, log information about it and
 		// update the chain state.
 		b.progressLogger.logBlockHeight(bmsg.block)
-		r := b.server.rpcServer
 
-		// Determine if this block is recent enough that we need to calculate
-		// block lottery data for it.
-		_, bestHeight := b.chainState.Best()
-		blockHeight := int64(bmsg.block.MsgBlock().Header.Height)
-		tooOldForLotteryData := blockHeight <=
-			(bestHeight - maxLotteryDataBlockDelta)
-		if !tooOldForLotteryData {
-			// Query the DB for the winning SStx for the next top block if we've
-			// reached stake validation height.  Broadcast them if this is the
-			// first time determining them and we're synced to the latest
-			// checkpoint.
-			winningTickets, _, _, err :=
-				b.chain.LotteryDataForBlock(blockHash)
-			if err != nil && int64(bmsg.block.MsgBlock().Header.Height) >=
-				b.server.chainParams.StakeValidationHeight-1 {
-				bmgrLog.Errorf("Failed to get next winning tickets: %v", err)
-
-				code, reason := mempool.ErrToRejectErr(err)
-				bmsg.peer.PushRejectMsg(wire.CmdBlock, code, reason,
-					blockHash, false)
-				return
-			}
-
-			// Push winning tickets notifications if we need to.
-			winningTicketsNtfn := &WinningTicketsNtfnData{
-				BlockHash:   *blockHash,
-				BlockHeight: int64(bmsg.block.MsgBlock().Header.Height),
-				Tickets:     winningTickets}
-			b.lotteryDataBroadcastMutex.Lock()
-			_, beenNotified := b.lotteryDataBroadcast[*blockHash]
-			b.lotteryDataBroadcastMutex.Unlock()
-			if !beenNotified && r != nil &&
-				int64(bmsg.block.MsgBlock().Header.Height) >
-					b.server.chainParams.LatestCheckpointHeight() {
-				r.ntfnMgr.NotifyWinningTickets(winningTicketsNtfn)
-
-				b.lotteryDataBroadcastMutex.Lock()
-				b.lotteryDataBroadcast[*blockHash] = struct{}{}
-				b.lotteryDataBroadcastMutex.Unlock()
-			}
-		}
-
+		onMainChain := !isOrphan && forkLen == 0
 		if onMainChain {
 			// A new block is connected, however, this new block may have
 			// votes in it that were hidden from the network and which
@@ -1137,56 +993,28 @@ func (b *blockManager) handleBlockMsg(bmsg *blockMsg) {
 				b.checkBlockForHiddenVotes(bmsg.block)
 			}
 
-			// Query the db for the latest best block since the block
-			// that was processed could be on a side chain or have caused
-			// a reorg.
+			// Notify stake difficulty subscribers and prune invalidated
+			// transactions.
 			best := b.chain.BestSnapshot()
-
-			// Query the DB for the missed tickets for the next top block.
-			missedTickets, err := b.chain.MissedTickets()
-			if err != nil {
-				bmgrLog.Warnf("Failed to get missed tickets "+
-					"for best block %v: %v", best.Hash, err)
-			}
-
-			// Retrieve the current previous block hash.
-			curPrevHash := b.chain.BestPrevHash()
-
-			nextStakeDiff, errSDiff :=
-				b.chain.CalcNextRequiredStakeDifficulty()
-			if errSDiff != nil {
-				bmgrLog.Warnf("Failed to get next stake difficulty "+
-					"calculation: %v", err)
-			}
-			if r != nil && errSDiff == nil {
+			r := b.server.rpcServer
+			if r != nil {
 				// Update registered websocket clients on the
 				// current stake difficulty.
 				r.ntfnMgr.NotifyStakeDifficulty(
 					&StakeDifficultyNtfnData{
-						*best.Hash,
+						best.Hash,
 						best.Height,
-						nextStakeDiff,
+						best.NextStakeDiff,
 					})
-				b.server.txMemPool.PruneStakeTx(nextStakeDiff,
-					best.Height)
-				b.server.txMemPool.PruneExpiredTx(best.Height)
 			}
-
-			winningTickets, poolSize, finalState, err :=
-				b.chain.LotteryDataForBlock(blockHash)
-			if err != nil {
-				bmgrLog.Warnf("Failed to get determine lottery "+
-					"data for new best block: %v", err)
-			}
-
-			b.updateChainState(best.Hash, best.Height, finalState,
-				uint32(poolSize), nextStakeDiff, winningTickets,
-				missedTickets, curPrevHash)
+			b.server.txMemPool.PruneStakeTx(best.NextStakeDiff,
+				best.Height)
+			b.server.txMemPool.PruneExpiredTx()
 
 			// Update this peer's latest block height, for future
 			// potential sync node candidancy.
 			heightUpdate = best.Height
-			blkHashUpdate = best.Hash
+			blkHashUpdate = &best.Hash
 
 			// Clear the rejected transactions.
 			b.rejectedTxns = make(map[chainhash.Hash]struct{})
@@ -1462,24 +1290,27 @@ func (b *blockManager) handleInvMsg(imsg *invMsg) {
 		}
 	}
 
+	fromSyncPeer := imsg.peer == b.syncPeer
+	isCurrent := b.current()
+
 	// If this inv contains a block announcement, and this isn't coming from
 	// our current sync peer or we're current, then update the last
 	// announced block for this peer. We'll use this information later to
 	// update the heights of peers based on blocks we've accepted that they
 	// previously announced.
-	if lastBlock != -1 && (imsg.peer != b.syncPeer || b.current()) {
+	if lastBlock != -1 && (!fromSyncPeer || isCurrent) {
 		imsg.peer.UpdateLastAnnouncedBlock(&invVects[lastBlock].Hash)
 	}
 
 	// Ignore invs from peers that aren't the sync if we are not current.
 	// Helps prevent fetching a mass of orphans.
-	if imsg.peer != b.syncPeer && !b.current() {
+	if !fromSyncPeer && !isCurrent {
 		return
 	}
 
 	// If our chain is current and a peer announces a block we already
 	// know of, then update their current block height.
-	if lastBlock != -1 && b.current() {
+	if lastBlock != -1 && isCurrent {
 		blkHeight, err := b.chain.BlockHeightByHash(&invVects[lastBlock].Hash)
 		if err == nil {
 
@@ -1703,191 +1534,64 @@ out:
 				err := b.chain.ForceHeadReorganization(
 					msg.formerBest, msg.newBest)
 
-				// Reorganizing has succeeded, so we need to
-				// update the chain state.
 				if err == nil {
-					// Query the db for the latest best block since
-					// the block that was processed could be on a
-					// side chain or have caused a reorg.
+					// Notify stake difficulty subscribers and prune
+					// invalidated transactions.
 					best := b.chain.BestSnapshot()
-
-					// Fetch the required lottery data.
-					winningTickets, poolSize, finalState, err :=
-						b.chain.LotteryDataForBlock(best.Hash)
-
-					// Update registered websocket clients on the
-					// current stake difficulty.
-					nextStakeDiff, errSDiff :=
-						b.chain.CalcNextRequiredStakeDifficulty()
-					if err != nil {
-						bmgrLog.Warnf("Failed to get next stake difficulty "+
-							"calculation: %v", err)
-					}
 					r := b.server.rpcServer
-					if r != nil && errSDiff == nil {
+					if r != nil {
 						r.ntfnMgr.NotifyStakeDifficulty(
 							&StakeDifficultyNtfnData{
-								*best.Hash,
+								best.Hash,
 								best.Height,
-								nextStakeDiff,
+								best.NextStakeDiff,
 							})
-						b.server.txMemPool.PruneStakeTx(nextStakeDiff,
-							best.Height)
-						b.server.txMemPool.PruneExpiredTx(best.Height)
 					}
-
-					missedTickets, err := b.chain.MissedTickets()
-					if err != nil {
-						bmgrLog.Warnf("Failed to get missed tickets"+
-							": %v", err)
-					}
-
-					// The blockchain should be updated, so fetch the
-					// latest snapshot.
-					best = b.chain.BestSnapshot()
-					curPrevHash := b.chain.BestPrevHash()
-
-					b.updateChainState(best.Hash,
-						best.Height,
-						finalState,
-						uint32(poolSize),
-						nextStakeDiff,
-						winningTickets,
-						missedTickets,
-						curPrevHash)
+					b.server.txMemPool.PruneStakeTx(best.NextStakeDiff,
+						best.Height)
+					b.server.txMemPool.PruneExpiredTx()
 				}
 
 				msg.reply <- forceReorganizationResponse{
 					err: err,
 				}
 
-			case getGenerationMsg:
-				g, err := b.chain.GetGeneration(msg.hash)
-				msg.reply <- getGenerationResponse{
+			case tipGenerationMsg:
+				g, err := b.chain.TipGeneration()
+				msg.reply <- tipGenerationResponse{
 					hashes: g,
 					err:    err,
 				}
 
-			case getTopBlockMsg:
-				b, err := b.chain.GetTopBlock()
-				msg.reply <- getTopBlockResponse{
-					block: b,
-					err:   err,
-				}
-
 			case processBlockMsg:
-				onMainChain, isOrphan, err := b.chain.ProcessBlock(
+				forkLen, isOrphan, err := b.chain.ProcessBlock(
 					msg.block, msg.flags)
 				if err != nil {
 					msg.reply <- processBlockResponse{
-						onMainChain: onMainChain,
-						isOrphan:    isOrphan,
-						err:         err,
+						forkLen:  forkLen,
+						isOrphan: isOrphan,
+						err:      err,
 					}
 					continue
 				}
 
-				// Get the winning tickets if the block is not an
-				// orphan and if it's recent. If they've yet to be
-				// broadcasted, broadcast them.
-				_, bestHeight := b.chainState.Best()
-				blockHeight := int64(msg.block.MsgBlock().Header.Height)
-				tooOldForLotteryData := blockHeight <=
-					(bestHeight - maxLotteryDataBlockDelta)
-				if !isOrphan && !tooOldForLotteryData {
-					b.lotteryDataBroadcastMutex.Lock()
-					_, beenNotified := b.lotteryDataBroadcast[*msg.block.Hash()]
-					b.lotteryDataBroadcastMutex.Unlock()
-					winningTickets, _, _, err :=
-						b.chain.LotteryDataForBlock(msg.block.Hash())
-					if err != nil && int64(msg.block.MsgBlock().Header.Height) >=
-						b.server.chainParams.StakeValidationHeight-1 {
-						bmgrLog.Warnf("Stake failure in lottery tickets "+
-							"calculation: %v", err)
-						msg.reply <- processBlockResponse{
-							isOrphan: false,
-							err:      err,
-						}
-						continue
-					}
-
-					// Notify registered websocket clients of newly
-					// eligible tickets to vote on if needed. Only
-					// do this if we're above the latest checkpoint
-					// height.
-					r := b.server.rpcServer
-					if r != nil && !isOrphan && !beenNotified &&
-						(msg.block.Height() >=
-							b.server.chainParams.StakeValidationHeight-1) &&
-						(msg.block.Height() >
-							b.server.chainParams.LatestCheckpointHeight()) {
-						ntfnData := &WinningTicketsNtfnData{
-							*msg.block.Hash(),
-							int64(msg.block.MsgBlock().Header.Height),
-							winningTickets}
-
-						r.ntfnMgr.NotifyWinningTickets(ntfnData)
-						b.lotteryDataBroadcastMutex.Lock()
-						b.lotteryDataBroadcast[*msg.block.Hash()] = struct{}{}
-						b.lotteryDataBroadcastMutex.Unlock()
-					}
-				}
-
-				// If the block added to the main chain, then we need to
-				// update the tip locally on block manager.
+				onMainChain := !isOrphan && forkLen == 0
 				if onMainChain {
-					// Query the chain for the latest best block
-					// since the block that was processed could be
-					// on a side chain or have caused a reorg.
+					// Notify stake difficulty subscribers and prune
+					// invalidated transactions.
 					best := b.chain.BestSnapshot()
-
-					// Update registered websocket clients on the
-					// current stake difficulty.
-					nextStakeDiff, err :=
-						b.chain.CalcNextRequiredStakeDifficulty()
-					if err != nil {
-						bmgrLog.Warnf("Failed to get next stake difficulty "+
-							"calculation: %v", err)
-					} else {
-						r := b.server.rpcServer
-						if r != nil {
-							r.ntfnMgr.NotifyStakeDifficulty(
-								&StakeDifficultyNtfnData{
-									*best.Hash,
-									best.Height,
-									nextStakeDiff,
-								})
-						}
+					r := b.server.rpcServer
+					if r != nil {
+						r.ntfnMgr.NotifyStakeDifficulty(
+							&StakeDifficultyNtfnData{
+								best.Hash,
+								best.Height,
+								best.NextStakeDiff,
+							})
 					}
-
-					b.server.txMemPool.PruneStakeTx(nextStakeDiff,
+					b.server.txMemPool.PruneStakeTx(best.NextStakeDiff,
 						best.Height)
-					b.server.txMemPool.PruneExpiredTx(
-						best.Height)
-
-					missedTickets, err := b.chain.MissedTickets()
-					if err != nil {
-						bmgrLog.Warnf("Failed to get missing tickets for "+
-							"incoming block %v: %v", best.Hash, err)
-					}
-					curPrevHash := b.chain.BestPrevHash()
-
-					winningTickets, poolSize, finalState, err :=
-						b.chain.LotteryDataForBlock(msg.block.Hash())
-					if err != nil {
-						bmgrLog.Warnf("Failed to determine block "+
-							"lottery data for incoming best block %v: %v",
-							best.Hash, err)
-					}
-
-					b.updateChainState(best.Hash,
-						best.Height,
-						finalState,
-						uint32(poolSize),
-						nextStakeDiff,
-						winningTickets,
-						missedTickets,
-						curPrevHash)
+					b.server.txMemPool.PruneExpiredTx()
 				}
 
 				// Allow any clients performing long polling via the
@@ -1913,10 +1617,6 @@ out:
 
 			case isCurrentMsg:
 				msg.reply <- b.current()
-
-			case pauseMsg:
-				// Wait until the sender unpauses the manager.
-				<-msg.unpause
 
 			case getCurrentTemplateMsg:
 				cur := deepCopyBlockTemplate(b.cachedCurrentTemplate)
@@ -1952,16 +1652,76 @@ out:
 	bmgrLog.Trace("Block handler done")
 }
 
+// notifiedWinningTickets returns whether or not the winning tickets
+// notification for the specified block hash has already been sent.
+func (b *blockManager) notifiedWinningTickets(hash *chainhash.Hash) bool {
+	b.lotteryDataBroadcastMutex.Lock()
+	_, beenNotified := b.lotteryDataBroadcast[*hash]
+	b.lotteryDataBroadcastMutex.Unlock()
+	return beenNotified
+}
+
+// headerApprovesParent returns whether or not the vote bits in the passed
+// header indicate the regular transaction tree of the parent block should be
+// considered valid.
+func headerApprovesParent(header *wire.BlockHeader) bool {
+	return dcrutil.IsFlagSet16(header.VoteBits, dcrutil.BlockValid)
+}
+
+// isDoubleSpendOrDuplicateError returns whether or not the passed error, which
+// is expected to have come from mempool, indicates a transaction was rejected
+// either due to containing a double spend or already existing in the pool.
+func isDoubleSpendOrDuplicateError(err error) bool {
+	merr, ok := err.(mempool.RuleError)
+	if !ok {
+		return false
+	}
+
+	rerr, ok := merr.Err.(mempool.TxRuleError)
+	if ok && rerr.RejectCode == wire.RejectDuplicate {
+		return true
+	}
+
+	cerr, ok := merr.Err.(blockchain.RuleError)
+	if ok && cerr.ErrorCode == blockchain.ErrMissingTxOut {
+		return true
+	}
+
+	return false
+}
+
 // handleNotifyMsg handles notifications from blockchain.  It does things such
 // as request orphan block parents and relay accepted blocks to connected peers.
 func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 	switch notification.Type {
-	// A block has been accepted into the block chain.  Relay it to other
-	// peers.
+	// A block that intends to extend the main chain has passed all sanity and
+	// contextual checks and the chain is believed to be current.  Relay it to
+	// other peers.
+	case blockchain.NTNewTipBlockChecked:
+		// WARNING: The chain lock is not released before sending this
+		// notification, so care must be taken to avoid calling chain functions
+		// which could result in a deadlock.
+		block, ok := notification.Data.(*dcrutil.Block)
+		if !ok {
+			bmgrLog.Warnf("New tip block checkedd notification is not a block.")
+			break
+		}
 
+		// Generate the inventory vector and relay it immediately.
+		iv := wire.NewInvVect(wire.InvTypeBlock, block.Hash())
+		b.server.RelayInventory(iv, block.MsgBlock().Header, true)
+		b.announcedBlockMtx.Lock()
+		b.announcedBlock = block.Hash()
+		b.announcedBlockMtx.Unlock()
+
+	// A block has been accepted into the block chain.  Relay it to other peers
+	// (will be ignored if already relayed via NTNewTipBlockChecked) and
+	// possibly notify RPC clients with the winning tickets.
 	case blockchain.NTBlockAccepted:
-		// Don't relay if we are not current. Other peers that are
-		// current should already know about it.
+		// Don't relay or notify RPC clients with winning tickets if we
+		// are not current. Other peers that are current should already
+		// know about it and clients, such as wallets, shouldn't be voting on
+		// old blocks.
 		if !b.current() {
 			return
 		}
@@ -1973,55 +1733,80 @@ func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 			break
 		}
 		block := band.Block
-		r := b.server.rpcServer
 
-		// Determine the winning tickets for this block if it hasn't
-		// already been sent out.  Skip notifications if we're not
-		// yet synced to the latest checkpoint or if we're before
-		// the height where we begin voting.
-		_, bestHeight := b.chainState.Best()
+		// Send a winning tickets notification as needed.  The notification will
+		// only be sent when the following conditions hold:
+		//
+		// - The RPC server is running
+		// - The block that would build on this one is at or after the height
+		//   voting begins
+		// - The block that would build on this one would not cause a reorg
+		//   larger than the max reorg notify depth
+		// - This block is after the final checkpoint height
+		// - A notification for this block has not already been sent
+		//
+		// To help visualize the math here, consider the following two competing
+		// branches:
+		//
+		// 100 -> 101  -> 102  -> 103 -> 104 -> 105 -> 106
+		//    \-> 101' -> 102'
+		//
+		// Further, assume that this is a notification for block 103', or in
+		// other words, it is extending the shorter side chain.  The reorg depth
+		// would be 106 - (103 - 3) = 6.  This should intuitively make sense,
+		// because if the side chain were to be extended enough to become the
+		// best chain, it would result in a a reorg that would remove 6 blocks,
+		// namely blocks 101, 102, 103, 104, 105, and 106.
+		blockHash := block.Hash()
+		bestHeight := band.BestHeight
 		blockHeight := int64(block.MsgBlock().Header.Height)
-		tooOldForLotteryData := blockHeight <=
-			(bestHeight - maxLotteryDataBlockDelta)
-		if block.Height() >=
-			b.server.chainParams.StakeValidationHeight-1 &&
-			!tooOldForLotteryData &&
-			block.Height() > b.server.chainParams.LatestCheckpointHeight() &&
-			r != nil {
-
-			hash := block.Hash()
-			b.lotteryDataBroadcastMutex.Lock()
-			_, beenNotified := b.lotteryDataBroadcast[*hash]
-			b.lotteryDataBroadcastMutex.Unlock()
+		reorgDepth := bestHeight - (blockHeight - band.ForkLen)
+		if b.server.rpcServer != nil &&
+			blockHeight >= b.server.chainParams.StakeValidationHeight-1 &&
+			reorgDepth < maxReorgDepthNotify &&
+			blockHeight > b.server.chainParams.LatestCheckpointHeight() &&
+			!b.notifiedWinningTickets(blockHash) {
 
 			// Obtain the winning tickets for this block.  handleNotifyMsg
 			// should be safe for concurrent access of things contained
 			// within blockchain.
-			wt, _, _, err := b.chain.LotteryDataForBlock(hash)
+			wt, _, _, err := b.chain.LotteryDataForBlock(blockHash)
 			if err != nil {
 				bmgrLog.Errorf("Couldn't calculate winning tickets for "+
-					"accepted block %v: %v", block.Hash(), err.Error())
+					"accepted block %v: %v", blockHash, err.Error())
 			} else {
-				if !beenNotified {
-					ntfnData := &WinningTicketsNtfnData{
-						BlockHash:   *hash,
-						BlockHeight: block.Height(),
-						Tickets:     wt,
-					}
-
-					// Notify registered websocket clients of newly
-					// eligible tickets to vote on.
-					r.ntfnMgr.NotifyWinningTickets(ntfnData)
-					b.lotteryDataBroadcastMutex.Lock()
-					b.lotteryDataBroadcast[*hash] = struct{}{}
-					b.lotteryDataBroadcastMutex.Unlock()
+				ntfnData := &WinningTicketsNtfnData{
+					BlockHash:   *blockHash,
+					BlockHeight: blockHeight,
+					Tickets:     wt,
 				}
+
+				// Notify registered websocket clients of newly
+				// eligible tickets to vote on.
+				b.server.rpcServer.ntfnMgr.NotifyWinningTickets(ntfnData)
+				b.lotteryDataBroadcastMutex.Lock()
+				b.lotteryDataBroadcast[*blockHash] = struct{}{}
+				b.lotteryDataBroadcastMutex.Unlock()
 			}
 		}
 
-		// Generate the inventory vector and relay it.
-		iv := wire.NewInvVect(wire.InvTypeBlock, block.Hash())
-		b.server.RelayInventory(iv, block.MsgBlock().Header)
+		// Generate the inventory vector and relay it immediately if not already
+		// known to have been sent in NTNewTipBlockChecked.
+		b.announcedBlockMtx.Lock()
+		sent := b.announcedBlock != nil && *b.announcedBlock == *blockHash
+		b.announcedBlock = nil
+		b.announcedBlockMtx.Unlock()
+		if !sent {
+			iv := wire.NewInvVect(wire.InvTypeBlock, blockHash)
+			b.server.RelayInventory(iv, block.MsgBlock().Header, true)
+		}
+
+		if !b.server.feeEstimator.IsEnabled() {
+			// fee estimation can only start after we have performed an initial
+			// sync, otherwise we'll start adding mempool transactions at the
+			// wrong height.
+			b.server.feeEstimator.Enable(block.Height())
+		}
 
 	// A block has been connected to the main block chain.
 	case blockchain.NTBlockConnected:
@@ -2039,68 +1824,89 @@ func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 		block := blockSlice[0]
 		parentBlock := blockSlice[1]
 
-		// Check and see if the regular tx tree of the previous block was
-		// invalid or not. If it wasn't, then we need to restore all the tx
-		// from this block into the mempool. They may end up being spent in
-		// the regular tx tree of the current block, for which there is code
-		// below.
-		txTreeRegularValid := dcrutil.IsFlagSet16(block.MsgBlock().Header.VoteBits,
-			dcrutil.BlockValid)
+		// Account for transactions mined in the newly connected block for fee
+		// estimation. This must be done before attempting to remove
+		// transactions from the mempool because the mempool will alert the
+		// estimator of the txs that are leaving
+		b.server.feeEstimator.ProcessBlock(block)
 
-		if !txTreeRegularValid {
-			for _, tx := range parentBlock.Transactions()[1:] {
-				_, err := b.server.txMemPool.MaybeAcceptTransaction(tx, false,
-					true)
-				if err != nil {
-					// Remove the transaction and all transactions
-					// that depend on it if it wasn't accepted into
-					// the transaction pool. Probably this will mostly
-					// throw errors, as the majority will already be
-					// in the mempool.
-					b.server.txMemPool.RemoveTransaction(tx, true)
-				}
-			}
-		}
+		// TODO: In the case the new tip disapproves the previous block, any
+		// transactions the previous block contains in its regular tree which
+		// double spend the same inputs as transactions in either tree of the
+		// current tip should ideally be tracked in the pool as eligibile for
+		// inclusion in an alternative tip (side chain block) in case the
+		// current tip block does not get enough votes.  However, the
+		// transaction pool currently does not provide any way to distinguish
+		// this condition and thus only provides tracking based on the current
+		// tip.  In order to handle this condition, the pool would have to
+		// provide a way to track and independently query which txns are
+		// eligible based on the current tip both approving and disapproving the
+		// previous block as well as the previous block itself.
 
-		// Remove all of the regular and stake transactions in the
-		// connected block from the transaction pool.  Also, remove any
-		// transactions which are now double spends as a result of these
-		// new transactions.  Finally, remove any transaction that is
-		// no longer an orphan. Transactions which depend on a confirmed
-		// transaction are NOT removed recursively because they are still
-		// valid.  Also, the coinbase of the regular tx tree is skipped
-		// because the memory pool doesn't (and can't) have regular
-		// tree coinbase transactions in it.
-		for _, tx := range parentBlock.Transactions()[1:] {
-			b.server.txMemPool.RemoveTransaction(tx, false)
-			b.server.txMemPool.RemoveDoubleSpends(tx)
-			b.server.txMemPool.RemoveOrphan(tx.Hash())
-			acceptedTxs := b.server.txMemPool.ProcessOrphans(tx.Hash())
-			b.server.AnnounceNewTransactions(acceptedTxs)
-		}
+		// Remove all of the regular and stake transactions in the connected
+		// block from the transaction pool.  Also, remove any transactions which
+		// are now double spends as a result of these new transactions.
+		// Finally, remove any transaction that is no longer an orphan.
+		// Transactions which depend on a confirmed transaction are NOT removed
+		// recursively because they are still valid.  Also, the coinbase of the
+		// regular tx tree is skipped because the transaction pool doesn't (and
+		// can't) have regular tree coinbase transactions in it.
+		//
+		// Also, in the case the RPC server is enabled, stop rebroadcasting any
+		// transactions in the block that were setup to be rebroadcast.
+		txMemPool := b.server.txMemPool
+		handleConnectedBlockTxns := func(txns []*dcrutil.Tx) {
+			for _, tx := range txns {
+				txMemPool.RemoveTransaction(tx, false)
+				txMemPool.RemoveDoubleSpends(tx)
+				txMemPool.RemoveOrphan(tx)
+				acceptedTxs := txMemPool.ProcessOrphans(tx)
+				b.server.AnnounceNewTransactions(acceptedTxs)
 
-		for _, stx := range block.STransactions()[0:] {
-			b.server.txMemPool.RemoveTransaction(stx, false)
-			b.server.txMemPool.RemoveDoubleSpends(stx)
-			b.server.txMemPool.RemoveOrphan(stx.Hash())
-			acceptedTxs := b.server.txMemPool.ProcessOrphans(stx.Hash())
-			b.server.AnnounceNewTransactions(acceptedTxs)
-		}
-
-		if r := b.server.rpcServer; r != nil {
-			// Now that this block is in the blockchain we can mark
-			// all the transactions (except the coinbase) as no
-			// longer needing rebroadcasting.
-			if txTreeRegularValid {
-				for _, tx := range parentBlock.Transactions()[1:] {
+				// Now that this block is in the blockchain, mark the
+				// transaction (except the coinbase) as no longer needing
+				// rebroadcasting.
+				if b.server.rpcServer != nil {
 					iv := wire.NewInvVect(wire.InvTypeTx, tx.Hash())
 					b.server.RemoveRebroadcastInventory(iv)
 				}
 			}
-			for _, stx := range block.STransactions()[0:] {
-				iv := wire.NewInvVect(wire.InvTypeTx, stx.Hash())
-				b.server.RemoveRebroadcastInventory(iv)
+		}
+		handleConnectedBlockTxns(block.Transactions()[1:])
+		handleConnectedBlockTxns(block.STransactions())
+
+		// In the case the regular tree of the previous block was disapproved,
+		// add all of the its transactions, with the exception of the coinbase,
+		// back to the transaction pool to be mined in a future block.
+		//
+		// Notice that some of those transactions might have been included in
+		// the current block and others might also be spending some of the same
+		// outputs that transactions in the previous originally block spent.
+		// This is the expected behavior because disapproval of the regular tree
+		// of the previous block essentially makes it as if those transactions
+		// never happened.
+		//
+		// Finally, if transactions fail to add to the pool for some reason
+		// other than the pool already having it (a duplicate) or now being a
+		// double spend, remove all transactions that depend on it as well.
+		// The dependencies are not removed for double spends because the only
+		// way a transaction which was not a double spend in the previous block
+		// to now be one is due to some transaction in the current block
+		// (probably the same one) also spending those outputs, and, in that
+		// case, anything that happens to be in the pool which depends on the
+		// transaction is still valid.
+		if !headerApprovesParent(&block.MsgBlock().Header) {
+			for _, tx := range parentBlock.Transactions()[1:] {
+				_, err := txMemPool.MaybeAcceptTransaction(tx, false, true)
+				if err != nil && !isDoubleSpendOrDuplicateError(err) {
+					txMemPool.RemoveTransaction(tx, true)
+				}
 			}
+		}
+
+		if r := b.server.rpcServer; r != nil {
+			// Filter and update the rebroadcast inventory.
+			b.server.PruneRebroadcastInventory()
 
 			// Notify registered websocket clients of incoming block.
 			r.ntfnMgr.NotifyBlockConnected(block)
@@ -2148,45 +1954,60 @@ func (b *blockManager) handleNotifyMsg(notification *blockchain.Notification) {
 		block := blockSlice[0]
 		parentBlock := blockSlice[1]
 
-		// If the parent tx tree was invalidated, we need to remove these
-		// tx from the mempool as the next incoming block may alternatively
-		// validate them.
-		txTreeRegularValid := dcrutil.IsFlagSet16(block.MsgBlock().Header.VoteBits,
-			dcrutil.BlockValid)
-
-		if !txTreeRegularValid {
+		// In the case the regular tree of the previous block was disapproved,
+		// disconnecting the current block makes all of those transactions valid
+		// again.  Thus, with the exception of the coinbase, remove all of those
+		// transactions and any that are now double spends from the transaction
+		// pool.  Transactions which depend on a confirmed transaction are NOT
+		// removed recursively because they are still valid.
+		txMemPool := b.server.txMemPool
+		if !headerApprovesParent(&block.MsgBlock().Header) {
 			for _, tx := range parentBlock.Transactions()[1:] {
-				b.server.txMemPool.RemoveTransaction(tx, false)
-				b.server.txMemPool.RemoveDoubleSpends(tx)
-				b.server.txMemPool.RemoveOrphan(tx.Hash())
-				b.server.txMemPool.ProcessOrphans(tx.Hash())
+				txMemPool.RemoveTransaction(tx, false)
+				txMemPool.RemoveDoubleSpends(tx)
+				txMemPool.RemoveOrphan(tx)
+				txMemPool.ProcessOrphans(tx)
 			}
 		}
 
-		// Reinsert all of the transactions (except the coinbase) from the parent
-		// tx tree regular into the transaction pool.
-		for _, tx := range parentBlock.Transactions()[1:] {
-			_, err := b.server.txMemPool.MaybeAcceptTransaction(tx, false, true)
-			if err != nil {
-				// Remove the transaction and all transactions
-				// that depend on it if it wasn't accepted into
-				// the transaction pool.
-				b.server.txMemPool.RemoveTransaction(tx, true)
+		// Add all of the regular and stake transactions in the disconnected
+		// block, with the exception of the regular tree coinbase, back to the
+		// transaction pool to be mined in a future block.
+		//
+		// Notice that, in the case the previous block was disapproved, some of
+		// the transactions in the block being disconnected might have been
+		// included in the previous block and others might also have been
+		// spending some of the same outputs.  This is the expected behavior
+		// because disapproval of the regular tree of the previous block
+		// essentially makes it as if those transactions never happened, so
+		// disconnecting the block that disapproved those transactions
+		// effectively revives them.
+		//
+		// Finally, if transactions fail to add to the pool for some reason
+		// other than the pool already having it (a duplicate) or now being a
+		// double spend, remove all transactions that depend on it as well.
+		// The dependencies are not removed for double spends because the only
+		// way a transaction which was not a double spend in the block being
+		// disconnected to now be one is due to some transaction in the previous
+		// block (probably the same one), which was disapproved, also spending
+		// those outputs, and, in that case, anything that happens to be in the
+		// pool which depends on the transaction is still valid.
+		handleDisconnectedBlockTxns := func(txns []*dcrutil.Tx) {
+			for _, tx := range txns {
+				_, err := txMemPool.MaybeAcceptTransaction(tx, false, true)
+				if err != nil && !isDoubleSpendOrDuplicateError(err) {
+					txMemPool.RemoveTransaction(tx, true)
+				}
 			}
 		}
+		handleDisconnectedBlockTxns(block.Transactions()[1:])
+		handleDisconnectedBlockTxns(block.STransactions())
 
-		for _, tx := range block.STransactions()[0:] {
-			_, err := b.server.txMemPool.MaybeAcceptTransaction(tx, false, true)
-			if err != nil {
-				// Remove the transaction and all transactions
-				// that depend on it if it wasn't accepted into
-				// the transaction pool.
-				b.server.txMemPool.RemoveTransaction(tx, true)
-			}
-		}
-
-		// Notify registered websocket clients.
 		if r := b.server.rpcServer; r != nil {
+			// Filter and update the rebroadcast inventory.
+			b.server.PruneRebroadcastInventory()
+
+			// Notify registered websocket clients.
 			r.ntfnMgr.NotifyBlockDisconnected(block)
 		}
 
@@ -2453,23 +2274,14 @@ func (b *blockManager) ForceReorganization(formerBest, newBest chainhash.Hash) e
 	return response.err
 }
 
-// GetGeneration returns the hashes of all the children of a parent for the
-// block hash that is passed to the function. It is funneled through the block
-// manager since blockchain is not safe for concurrent access.
-func (b *blockManager) GetGeneration(h chainhash.Hash) ([]chainhash.Hash, error) {
-	reply := make(chan getGenerationResponse)
-	b.msgChan <- getGenerationMsg{hash: h, reply: reply}
+// TipGeneration returns the hashes of all the children of the current best
+// chain tip.  It is funneled through the block manager since blockchain is not
+// safe for concurrent access.
+func (b *blockManager) TipGeneration() ([]chainhash.Hash, error) {
+	reply := make(chan tipGenerationResponse)
+	b.msgChan <- tipGenerationMsg{reply: reply}
 	response := <-reply
 	return response.hashes, response.err
-}
-
-// GetTopBlockFromChain obtains the current top block from HEAD of the blockchain.
-// Returns a pointer to the cached copy of the block in memory.
-func (b *blockManager) GetTopBlockFromChain() (*dcrutil.Block, error) {
-	reply := make(chan getTopBlockResponse)
-	b.msgChan <- getTopBlockMsg{reply: reply}
-	response := <-reply
-	return response.block, response.err
 }
 
 // ProcessBlock makes use of ProcessBlock on an internal instance of a block
@@ -2502,16 +2314,6 @@ func (b *blockManager) IsCurrent() bool {
 	return <-reply
 }
 
-// Pause pauses the block manager until the returned channel is closed.
-//
-// Note that while paused, all peer and block processing is halted.  The
-// message sender should avoid pausing the block manager for long durations.
-func (b *blockManager) Pause() chan<- struct{} {
-	c := make(chan struct{})
-	b.msgChan <- pauseMsg{c}
-	return c
-}
-
 // TicketPoolValue returns the current value of the total stake in the ticket
 // pool.
 func (b *blockManager) TicketPoolValue() (dcrutil.Amount, error) {
@@ -2531,7 +2333,6 @@ func (b *blockManager) SetCurrentTemplate(bt *BlockTemplate) {
 	reply := make(chan setCurrentTemplateResponse)
 	b.msgChan <- setCurrentTemplateMsg{Template: bt, reply: reply}
 	<-reply
-	return
 }
 
 // GetParentTemplate gets the current parent block template for mining.
@@ -2547,12 +2348,11 @@ func (b *blockManager) SetParentTemplate(bt *BlockTemplate) {
 	reply := make(chan setParentTemplateResponse)
 	b.msgChan <- setParentTemplateMsg{Template: bt, reply: reply}
 	<-reply
-	return
 }
 
-// newBlockManager returns a new decred block manager.
+// newBlockManager returns a new Decred block manager.
 // Use Start to begin processing asynchronous block and inv updates.
-func newBlockManager(s *server, indexManager blockchain.IndexManager) (*blockManager, error) {
+func newBlockManager(s *server, indexManager blockchain.IndexManager, interrupt <-chan struct{}) (*blockManager, error) {
 	bm := blockManager{
 		server:              s,
 		rejectedTxns:        make(map[chainhash.Hash]struct{}),
@@ -2571,6 +2371,7 @@ func newBlockManager(s *server, indexManager blockchain.IndexManager) (*blockMan
 	var err error
 	bm.chain, err = blockchain.New(&blockchain.Config{
 		DB:            s.db,
+		Interrupt:     interrupt,
 		ChainParams:   s.chainParams,
 		TimeSource:    s.timeSource,
 		Notifications: bm.handleNotifyMsg,
@@ -2586,7 +2387,7 @@ func newBlockManager(s *server, indexManager blockchain.IndexManager) (*blockMan
 		// Initialize the next checkpoint based on the current height.
 		bm.nextCheckpoint = bm.findNextHeaderCheckpoint(best.Height)
 		if bm.nextCheckpoint != nil {
-			bm.resetHeaderState(best.Hash, best.Height)
+			bm.resetHeaderState(&best.Hash, best.Height)
 		}
 	} else {
 		bmgrLog.Info("Checkpoints are disabled")
@@ -2602,36 +2403,40 @@ func newBlockManager(s *server, indexManager blockchain.IndexManager) (*blockMan
 		return nil, fmt.Errorf("closing after dumping blockchain")
 	}
 
-	// Query the DB for the current winning ticket data.
-	wt, ps, fs, err := bm.chain.LotteryDataForBlock(best.Hash)
-	if err != nil {
-		return nil, err
-	}
-
-	// Query the DB for the currently missed tickets.
-	missedTickets, err := bm.chain.MissedTickets()
-	if err != nil {
-		return nil, err
-	}
-
-	// Retrieve the current previous block hash and next stake difficulty.
-	curPrevHash := bm.chain.BestPrevHash()
-	nextStakeDiff, err := bm.chain.CalcNextRequiredStakeDifficulty()
-	if err != nil {
-		return nil, err
-	}
-
-	bm.updateChainState(best.Hash,
-		best.Height,
-		fs,
-		uint32(ps),
-		nextStakeDiff,
-		wt,
-		missedTickets,
-		curPrevHash)
 	bm.lotteryDataBroadcast = make(map[chainhash.Hash]struct{})
+	bm.syncHeightMtx.Lock()
+	bm.syncHeight = best.Height
+	bm.syncHeightMtx.Unlock()
 
 	return &bm, nil
+}
+
+// removeRegressionDB removes the existing regression test database if running
+// in regression test mode and it already exists.
+func removeRegressionDB(dbPath string) error {
+	// Don't do anything if not in regression test mode.
+	if !cfg.RegNet {
+		return nil
+	}
+
+	// Remove the old regression test database if it already exists.
+	fi, err := os.Stat(dbPath)
+	if err == nil {
+		dcrdLog.Infof("Removing regression test database from '%s'", dbPath)
+		if fi.IsDir() {
+			err := os.RemoveAll(dbPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			err := os.Remove(dbPath)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // blockDbPath returns the path to the block database given a database type.
@@ -2700,6 +2505,10 @@ func loadBlockDB() (database.DB, error) {
 
 	// The database name is based on the database type.
 	dbPath := blockDbPath(cfg.DbType)
+
+	// The regression test is special in that it needs a clean database for
+	// each run, so remove it now if it already exists.
+	removeRegressionDB(dbPath)
 
 	dcrdLog.Infof("Loading block database from '%s'", dbPath)
 	db, err := database.Open(cfg.DbType, dbPath, activeNetParams.Net)

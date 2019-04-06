@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -20,14 +21,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btclog"
 	"github.com/btcsuite/go-socks/socks"
 	"github.com/decred/dcrd/connmgr"
 	"github.com/decred/dcrd/database"
 	_ "github.com/decred/dcrd/database/ffldb"
 	"github.com/decred/dcrd/dcrutil"
-	"github.com/decred/dcrd/mempool"
+	"github.com/decred/dcrd/internal/version"
+	"github.com/decred/dcrd/mempool/v2"
 	"github.com/decred/dcrd/sampleconfig"
+	"github.com/decred/slog"
 	flags "github.com/jessevdk/go-flags"
 )
 
@@ -37,6 +39,7 @@ const (
 	defaultLogLevel              = "info"
 	defaultLogDirname            = "logs"
 	defaultLogFilename           = "dcrd.log"
+	defaultMaxSameIP             = 5
 	defaultMaxPeers              = 125
 	defaultBanDuration           = time.Hour * 24
 	defaultBanThreshold          = 100
@@ -57,6 +60,7 @@ const (
 	defaultSigCacheMaxSize       = 100000
 	defaultTxIndex               = false
 	defaultNoExistsAddrIndex     = false
+	defaultNoCFilters            = false
 )
 
 var (
@@ -67,6 +71,7 @@ var (
 	defaultRPCKeyFile  = filepath.Join(defaultHomeDir, "rpc.key")
 	defaultRPCCertFile = filepath.Join(defaultHomeDir, "rpc.cert")
 	defaultLogDir      = filepath.Join(defaultHomeDir, defaultLogDirname)
+	defaultAltDNSNames = []string(nil)
 )
 
 // runServiceCommand is only set to a real function on Windows.  It is used
@@ -96,6 +101,7 @@ type config struct {
 	ConnectPeers         []string      `long:"connect" description:"Connect only to the specified peers at startup"`
 	DisableListen        bool          `long:"nolisten" description:"Disable listening for incoming connections -- NOTE: Listening is automatically disabled if the --connect or --proxy options are used without also specifying listen interfaces via --listen"`
 	Listeners            []string      `long:"listen" description:"Add an interface/port to listen for connections (default all interfaces port: 9108, testnet: 19108)"`
+	MaxSameIP            int           `long:"maxsameip" description:"Max number of connections with the same IP -- 0 to disable"`
 	MaxPeers             int           `long:"maxpeers" description:"Max number of inbound and outbound peers"`
 	DisableBanning       bool          `long:"nobanning" description:"Disable banning of misbehaving peers"`
 	BanDuration          time.Duration `long:"banduration" description:"How long to ban misbehaving peers.  Valid time units are {s, m, h}.  Minimum 1 second"`
@@ -125,6 +131,7 @@ type config struct {
 	TorIsolation         bool          `long:"torisolation" description:"Enable Tor stream isolation by randomizing user credentials for each connection."`
 	TestNet              bool          `long:"testnet" description:"Use the test network"`
 	SimNet               bool          `long:"simnet" description:"Use the simulation test network"`
+	RegNet               bool          `long:"regnet" description:"Use the regression test network"`
 	DisableCheckpoints   bool          `long:"nocheckpoints" description:"Disable built-in checkpoints.  Don't do this unless you know what you're doing."`
 	DbType               string        `long:"dbtype" description:"Database backend to use for the Block Chain"`
 	Profile              string        `long:"profile" description:"Enable HTTP profiling on given [addr:]port -- NOTE port must be between 1024 and 65536"`
@@ -143,14 +150,12 @@ type config struct {
 	BlockMinSize         uint32        `long:"blockminsize" description:"Mininum block size in bytes to be used when creating a block"`
 	BlockMaxSize         uint32        `long:"blockmaxsize" description:"Maximum block size in bytes to be used when creating a block"`
 	BlockPrioritySize    uint32        `long:"blockprioritysize" description:"Size in bytes for high-priority/low-fee transactions when creating a block"`
-	GetWorkKeys          []string      `long:"getworkkey" description:"DEPRECATED -- Use the --miningaddr option instead"`
-	NoPeerBloomFilters   bool          `long:"nopeerbloomfilters" description:"Disable bloom filtering support"`
 	SigCacheMaxSize      uint          `long:"sigcachemaxsize" description:"The maximum number of entries in the signature verification cache"`
 	NonAggressive        bool          `long:"nonaggressive" description:"Disable mining off of the parent block of the blockchain if there aren't enough voters"`
 	NoMiningStateSync    bool          `long:"nominingstatesync" description:"Disable synchronizing the mining state with other nodes"`
 	AllowOldVotes        bool          `long:"allowoldvotes" description:"Enable the addition of very old votes to the mempool"`
 	BlocksOnly           bool          `long:"blocksonly" description:"Do not accept transactions from remote peers."`
-	RelayNonStd          bool          `long:"relaynonstd" description:"Relay non-standard transactions regardless of the default settings for the active network."`
+	AcceptNonStd         bool          `long:"acceptnonstd" description:"Accept and relay non-standard transactions to the network regardless of the default settings for the active network."`
 	RejectNonStd         bool          `long:"rejectnonstd" description:"Reject non-standard transactions regardless of the default settings for the active network."`
 	TxIndex              bool          `long:"txindex" description:"Maintain a full hash-based transaction index which makes all transactions available via the getrawtransaction RPC"`
 	DropTxIndex          bool          `long:"droptxindex" description:"Deletes the hash-based transaction index from the database on start up and then exits."`
@@ -158,9 +163,12 @@ type config struct {
 	DropAddrIndex        bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up and then exits."`
 	NoExistsAddrIndex    bool          `long:"noexistsaddrindex" description:"Disable the exists address index, which tracks whether or not an address has even been used."`
 	DropExistsAddrIndex  bool          `long:"dropexistsaddrindex" description:"Deletes the exists address index from the database on start up and then exits."`
+	NoCFilters           bool          `long:"nocfilters" description:"Disable compact filtering (CF) support"`
+	DropCFIndex          bool          `long:"dropcfindex" description:"Deletes the index used for compact filtering (CF) support from the database on start up and then exits."`
 	PipeRx               uint          `long:"piperx" description:"File descriptor of read end pipe to enable parent -> child process communication"`
 	PipeTx               uint          `long:"pipetx" description:"File descriptor of write end pipe to enable parent <- child process communication"`
 	LifetimeEvents       bool          `long:"lifetimeevents" description:"Send lifetime notifications over the TX pipe"`
+	AltDNSNames          []string      `long:"altdnsnames" description:"Specify additional dns names to use when generating the rpc server certificate" env:"DCRD_ALT_DNSNAMES" env-delim:","`
 	onionlookup          func(string) ([]net.IP, error)
 	lookup               func(string) ([]net.IP, error)
 	oniondial            func(string, string) (net.Conn, error)
@@ -179,20 +187,60 @@ type serviceOptions struct {
 // cleanAndExpandPath expands environment variables and leading ~ in the
 // passed path, cleans the result, and returns it.
 func cleanAndExpandPath(path string) string {
-	// Expand initial ~ to OS specific home directory.
-	if strings.HasPrefix(path, "~") {
-		homeDir := filepath.Dir(defaultHomeDir)
-		path = strings.Replace(path, "~", homeDir, 1)
+	// Nothing to do when no path is given.
+	if path == "" {
+		return path
 	}
 
-	// NOTE: The os.ExpandEnv doesn't work with Windows-style %VARIABLE%,
-	// but they variables can still be expanded via POSIX-style $VARIABLE.
-	return filepath.Clean(os.ExpandEnv(path))
+	// NOTE: The os.ExpandEnv doesn't work with Windows cmd.exe-style
+	// %VARIABLE%, but the variables can still be expanded via POSIX-style
+	// $VARIABLE.
+	path = os.ExpandEnv(path)
+
+	if !strings.HasPrefix(path, "~") {
+		return filepath.Clean(path)
+	}
+
+	// Expand initial ~ to the current user's home directory, or ~otheruser
+	// to otheruser's home directory.  On Windows, both forward and backward
+	// slashes can be used.
+	path = path[1:]
+
+	var pathSeparators string
+	if runtime.GOOS == "windows" {
+		pathSeparators = string(os.PathSeparator) + "/"
+	} else {
+		pathSeparators = string(os.PathSeparator)
+	}
+
+	userName := ""
+	if i := strings.IndexAny(path, pathSeparators); i != -1 {
+		userName = path[:i]
+		path = path[i:]
+	}
+
+	homeDir := ""
+	var u *user.User
+	var err error
+	if userName == "" {
+		u, err = user.Current()
+	} else {
+		u, err = user.Lookup(userName)
+	}
+	if err == nil {
+		homeDir = u.HomeDir
+	}
+	// Fallback to CWD if user lookup fails or user has no home directory.
+	if homeDir == "" {
+		homeDir = "."
+	}
+
+	return filepath.Join(homeDir, path)
 }
 
 // validLogLevel returns whether or not logLevel is a valid debug log level.
 func validLogLevel(logLevel string) bool {
-	_, ok := btclog.LevelFromString(logLevel)
+	_, ok := slog.LevelFromString(logLevel)
 	return ok
 }
 
@@ -387,6 +435,7 @@ func loadConfig() (*config, []string, error) {
 		HomeDir:              defaultHomeDir,
 		ConfigFile:           defaultConfigFile,
 		DebugLevel:           defaultLogLevel,
+		MaxSameIP:            defaultMaxSameIP,
 		MaxPeers:             defaultMaxPeers,
 		BanDuration:          defaultBanDuration,
 		BanThreshold:         defaultBanThreshold,
@@ -411,6 +460,8 @@ func loadConfig() (*config, []string, error) {
 		AddrIndex:            defaultAddrIndex,
 		AllowOldVotes:        defaultAllowOldVotes,
 		NoExistsAddrIndex:    defaultNoExistsAddrIndex,
+		NoCFilters:           defaultNoCFilters,
+		AltDNSNames:          defaultAltDNSNames,
 	}
 
 	// Service options which are only added on Windows.
@@ -438,7 +489,8 @@ func loadConfig() (*config, []string, error) {
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
 	usageMessage := fmt.Sprintf("Use %s -h to show usage", appName)
 	if preCfg.ShowVersion {
-		fmt.Printf("%s version %s (Go version %s)\n", appName, version(), runtime.Version())
+		fmt.Printf("%s version %s (Go version %s %s/%s)\n", appName,
+			version.String(), runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		os.Exit(0)
 	}
 
@@ -491,8 +543,8 @@ func loadConfig() (*config, []string, error) {
 
 	// Create a default config file when one does not exist and the user did
 	// not specify an override.
-	if !preCfg.SimNet && preCfg.ConfigFile == defaultConfigFile &&
-		!fileExists(preCfg.ConfigFile) {
+	if !(preCfg.SimNet || preCfg.RegNet) && preCfg.ConfigFile ==
+		defaultConfigFile && !fileExists(preCfg.ConfigFile) {
 
 		err := createDefaultConfigFile(preCfg.ConfigFile)
 		if err != nil {
@@ -504,7 +556,7 @@ func loadConfig() (*config, []string, error) {
 	// Load additional config from file.
 	var configFileError error
 	parser := newConfigParser(&cfg, &serviceOpts, flags.Default)
-	if !cfg.SimNet || preCfg.ConfigFile != defaultConfigFile {
+	if !(cfg.SimNet || cfg.RegNet) || preCfg.ConfigFile != defaultConfigFile {
 		err := flags.NewIniParser(parser).ParseFile(preCfg.ConfigFile)
 		if err != nil {
 			if _, ok := err.(*os.PathError); !ok {
@@ -515,6 +567,11 @@ func loadConfig() (*config, []string, error) {
 			}
 			configFileError = err
 		}
+	}
+
+	// Don't add peers from the config file when in regression test mode.
+	if preCfg.RegNet && len(cfg.AddPeers) > 0 {
+		cfg.AddPeers = nil
 	}
 
 	// Parse command line options again to ensure they take precedence.
@@ -546,14 +603,12 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
-	// Multiple networks can't be selected simultaneously.
+	// Multiple networks can't be selected simultaneously.  Count number of
+	// network flags passed and assign active network params.
 	numNets := 0
-
-	// Count number of network flags passed; assign active network params
-	// while we're at it
 	if cfg.TestNet {
 		numNets++
-		activeNetParams = &testNet2Params
+		activeNetParams = &testNet3Params
 	}
 	if cfg.SimNet {
 		numNets++
@@ -561,8 +616,12 @@ func loadConfig() (*config, []string, error) {
 		activeNetParams = &simNetParams
 		cfg.DisableDNSSeed = true
 	}
+	if cfg.RegNet {
+		numNets++
+		activeNetParams = &regNetParams
+	}
 	if numNets > 1 {
-		str := "%s: the testnet and simnet params can't be " +
+		str := "%s: the testnet, regnet, and simnet params can't be " +
 			"used together -- choose one of the three"
 		err := fmt.Errorf(str, funcName)
 		fmt.Fprintln(os.Stderr, err)
@@ -574,21 +633,21 @@ func loadConfig() (*config, []string, error) {
 	// according to the default of the active network. The set
 	// configuration value takes precedence over the default value for the
 	// selected network.
-	relayNonStd := activeNetParams.RelayNonStdTxs
+	acceptNonStd := activeNetParams.AcceptNonStdTxs
 	switch {
-	case cfg.RelayNonStd && cfg.RejectNonStd:
-		str := "%s: rejectnonstd and relaynonstd cannot be used " +
+	case cfg.AcceptNonStd && cfg.RejectNonStd:
+		str := "%s: rejectnonstd and acceptnonstd cannot be used " +
 			"together -- choose only one"
 		err := fmt.Errorf(str, funcName)
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr, usageMessage)
 		return nil, nil, err
 	case cfg.RejectNonStd:
-		relayNonStd = false
-	case cfg.RelayNonStd:
-		relayNonStd = true
+		acceptNonStd = false
+	case cfg.AcceptNonStd:
+		acceptNonStd = true
 	}
-	cfg.RelayNonStd = relayNonStd
+	cfg.AcceptNonStd = acceptNonStd
 
 	// Append the network type to the data directory so it is "namespaced"
 	// per network.  In addition to the block database, there are other
@@ -602,13 +661,14 @@ func loadConfig() (*config, []string, error) {
 	cfg.DataDir = cleanAndExpandPath(cfg.DataDir)
 	var oldTestNets []string
 	oldTestNets = append(oldTestNets, filepath.Join(cfg.DataDir, "testnet"))
-	cfg.DataDir = filepath.Join(cfg.DataDir, netName(activeNetParams))
+	oldTestNets = append(oldTestNets, filepath.Join(cfg.DataDir, "testnet2"))
+	cfg.DataDir = filepath.Join(cfg.DataDir, activeNetParams.Name)
 	logRotator = nil
 	if !cfg.NoFileLogging {
 		// Append the network type to the log directory so it is "namespaced"
 		// per network in the same fashion as the data directory.
 		cfg.LogDir = cleanAndExpandPath(cfg.LogDir)
-		cfg.LogDir = filepath.Join(cfg.LogDir, netName(activeNetParams))
+		cfg.LogDir = filepath.Join(cfg.LogDir, activeNetParams.Name)
 
 		// Initialize log rotation.  After log rotation has been initialized, the
 		// logger variables may be used.
@@ -865,29 +925,16 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
-	// Check getwork keys are valid and saved parsed versions.
-	cfg.miningAddrs = make([]dcrutil.Address, 0, len(cfg.GetWorkKeys)+
-		len(cfg.MiningAddrs))
-	for _, strAddr := range cfg.GetWorkKeys {
-		addr, err := dcrutil.DecodeAddress(strAddr)
-		if err != nil {
-			str := "%s: getworkkey '%s' failed to decode: %v"
-			err := fmt.Errorf(str, funcName, strAddr, err)
-			fmt.Fprintln(os.Stderr, err)
-			fmt.Fprintln(os.Stderr, usageMessage)
-			return nil, nil, err
-		}
-		if !addr.IsForNet(activeNetParams.Params) {
-			str := "%s: getworkkey '%s' is on the wrong network"
-			err := fmt.Errorf(str, funcName, strAddr)
-			fmt.Fprintln(os.Stderr, err)
-			fmt.Fprintln(os.Stderr, usageMessage)
-			return nil, nil, err
-		}
-		cfg.miningAddrs = append(cfg.miningAddrs, addr)
+	// !--nocfilters and --dropcfindex do not mix.
+	if !cfg.NoCFilters && cfg.DropCFIndex {
+		err := errors.New("dropcfindex cannot be actived without nocfilters")
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return nil, nil, err
 	}
 
 	// Check mining addresses are valid and saved parsed versions.
+	cfg.miningAddrs = make([]dcrutil.Address, 0, len(cfg.MiningAddrs))
 	for _, strAddr := range cfg.MiningAddrs {
 		addr, err := dcrutil.DecodeAddress(strAddr)
 		if err != nil {
@@ -1090,11 +1137,11 @@ func loadConfig() (*config, []string, error) {
 // example, .onion addresses will be dialed using the onion specific proxy if
 // one was specified, but will otherwise use the normal dial function (which
 // could itself use a proxy or not).
-func dcrdDial(addr net.Addr) (net.Conn, error) {
-	if strings.Contains(addr.String(), ".onion:") {
-		return cfg.oniondial(addr.Network(), addr.String())
+func dcrdDial(network, addr string) (net.Conn, error) {
+	if strings.Contains(addr, ".onion:") {
+		return cfg.oniondial(network, addr)
 	}
-	return cfg.dial(addr.Network(), addr.String())
+	return cfg.dial(network, addr)
 }
 
 // dcrdLookup returns the correct DNS lookup function to use depending on the

@@ -12,7 +12,9 @@ import (
 )
 
 const (
-	// ptrSize is the number of bytes in a native pointer
+	// ptrSize is the number of bytes in a native pointer.
+	//
+	// nolint: vet
 	ptrSize = 4 << (^uintptr(0) >> 63)
 
 	// staticDepth is the size of the static array to use for keeping track
@@ -61,7 +63,7 @@ type treapNode struct {
 // nodeSize returns the number of bytes the specified node occupies including
 // the struct fields and the contents of the key and value.
 func nodeSize(node *treapNode) uint64 {
-	return nodeFieldsSize + uint64(len(node.key)+nodeValueSize)
+	return nodeFieldsSize + uint64(len(node.key)) + nodeValueSize
 }
 
 // newTreapNode returns a new node from the given key, value, and priority.  The
@@ -99,9 +101,8 @@ func (t *treapNode) getByIndex(idx int) (Key, *Value) {
 		if node.left == nil {
 			if idx == 0 {
 				return node.key, node.value
-			} else {
-				node, idx = node.right, idx-1
 			}
+			node, idx = node.right, idx-1
 		} else {
 			if idx < int(node.left.size) {
 				node = node.left

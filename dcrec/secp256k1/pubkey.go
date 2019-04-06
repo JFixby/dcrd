@@ -16,7 +16,6 @@ import (
 const (
 	PubKeyBytesLenCompressed   = 33
 	PubKeyBytesLenUncompressed = 65
-	PubKeyBytesLenHybrid       = 65
 )
 
 func isOdd(a *big.Int) bool {
@@ -25,10 +24,11 @@ func isOdd(a *big.Int) bool {
 
 // decompressPoint decompresses a point on the given curve given the X point and
 // the solution to use.
-func decompressPoint(curve *KoblitzCurve, x *big.Int, ybit bool) (*big.Int, error) {
+func decompressPoint(x *big.Int, ybit bool) (*big.Int, error) {
 	// TODO(oga) This will probably only work for secp256k1 due to
 	// optimizations.
 
+	curve := S256()
 	// Y = +-sqrt(x^3 + B)
 	x3 := new(big.Int).Mul(x, x)
 	x3.Mul(x3, x)
@@ -52,21 +52,20 @@ func decompressPoint(curve *KoblitzCurve, x *big.Int, ybit bool) (*big.Int, erro
 const (
 	pubkeyCompressed   byte = 0x2 // y_bit + x coord
 	pubkeyUncompressed byte = 0x4 // x coord + y coord
-	pubkeyHybrid       byte = 0x6 // y_bit + x coord + y coord
 )
 
 // NewPublicKey instantiates a new public key with the given X,Y coordinates.
-func NewPublicKey(curve *KoblitzCurve, x *big.Int, y *big.Int) *PublicKey {
-	return &PublicKey{curve, x, y}
+func NewPublicKey(x *big.Int, y *big.Int) *PublicKey {
+	return &PublicKey{S256(), x, y}
 }
 
 // ParsePubKey parses a public key for a koblitz curve from a bytestring into a
-// ecdsa.Publickey, verifying that it is valid. It supports compressed,
-// uncompressed and hybrid signature formats.
-func ParsePubKey(pubKeyStr []byte, curve *KoblitzCurve) (key *PublicKey,
+// ecdsa.Publickey, verifying that it is valid. It supports compressed and
+// uncompressed signature formats, but not the hybrid format.
+func ParsePubKey(pubKeyStr []byte) (key *PublicKey,
 	err error) {
 	pubkey := PublicKey{}
-	pubkey.Curve = curve
+	pubkey.Curve = S256()
 
 	if len(pubKeyStr) == 0 {
 		return nil, errors.New("pubkey string is empty")
@@ -78,17 +77,13 @@ func ParsePubKey(pubKeyStr []byte, curve *KoblitzCurve) (key *PublicKey,
 
 	switch len(pubKeyStr) {
 	case PubKeyBytesLenUncompressed:
-		if format != pubkeyUncompressed && format != pubkeyHybrid {
+		if format != pubkeyUncompressed {
 			return nil, fmt.Errorf("invalid magic in pubkey str: "+
 				"%d", pubKeyStr[0])
 		}
 
 		pubkey.X = new(big.Int).SetBytes(pubKeyStr[1:33])
 		pubkey.Y = new(big.Int).SetBytes(pubKeyStr[33:])
-		// hybrid keys have extra information, make use of it.
-		if format == pubkeyHybrid && ybit != isOdd(pubkey.Y) {
-			return nil, fmt.Errorf("ybit doesn't match oddness")
-		}
 	case PubKeyBytesLenCompressed:
 		// format is 0x2 | solution, <X coordinate>
 		// solution determines which solution of the curve we use.
@@ -98,7 +93,7 @@ func ParsePubKey(pubKeyStr []byte, curve *KoblitzCurve) (key *PublicKey,
 				"pubkey string: %d", pubKeyStr[0])
 		}
 		pubkey.X = new(big.Int).SetBytes(pubKeyStr[1:33])
-		pubkey.Y, err = decompressPoint(curve, pubkey.X, ybit)
+		pubkey.Y, err = decompressPoint(pubkey.X, ybit)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +116,7 @@ func ParsePubKey(pubKeyStr []byte, curve *KoblitzCurve) (key *PublicKey,
 }
 
 // PublicKey is an ecdsa.PublicKey with additional functions to
-// serialize in uncompressed, compressed, and hybrid formats.
+// serialize in uncompressed and compressed formats.
 type PublicKey ecdsa.PublicKey
 
 // ToECDSA returns the public key as a *ecdsa.PublicKey.
@@ -154,18 +149,6 @@ func (p PublicKey) SerializeCompressed() []byte {
 	}
 	b = append(b, format)
 	return paddedAppend(32, b, p.X.Bytes())
-}
-
-// SerializeHybrid serializes a public key in a 65-byte hybrid format.
-func (p PublicKey) SerializeHybrid() []byte {
-	b := make([]byte, 0, PubKeyBytesLenHybrid)
-	format := pubkeyHybrid
-	if isOdd(p.Y) {
-		format |= 0x1
-	}
-	b = append(b, format)
-	b = paddedAppend(32, b, p.X.Bytes())
-	return paddedAppend(32, b, p.Y.Bytes())
 }
 
 // IsEqual compares this PublicKey instance to the one passed, returning true if

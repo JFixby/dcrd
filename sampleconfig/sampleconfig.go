@@ -14,11 +14,13 @@ const FileContents = `[Application Options]
 ; The directory to store data such as the block chain and peer addresses.  The
 ; block chain takes several GB, so this location must have a lot of free space.
 ; The default is ~/.dcrd/data on POSIX OSes, $LOCALAPPDATA/Dcrd/data on Windows,
-; ~/Library/Application Support/Dcrd/data on Mac OS, and $homed/dcrd/data on
+; ~/Library/Application Support/Dcrd/data on macOS, and $homed/dcrd/data on
 ; Plan9.  Environment variables are expanded so they may be used.  NOTE: Windows
 ; environment variables are typically %VARIABLE%, but they must be accessed with
-; $VARIABLE here.  Also, ~ is expanded to $LOCALAPPDATA on Windows.
-; datadir=~/.dcrd/data
+; $VARIABLE here.
+; datadir=~/.dcrd/data                            ; Unix
+; datadir=$LOCALAPPDATA/Dcrd/data                 ; Windows
+; datadir=~/Library/Application Support/Dcrd/data ; macOS
 
 
 ; ------------------------------------------------------------------------------
@@ -39,7 +41,7 @@ const FileContents = `[Application Options]
 ; proxypass=
 
 ; The SOCKS5 proxy above is assumed to be Tor (https://www.torproject.org).
-; If the proxy  is not tor the the following my be used to prevent using
+; If the proxy is not tor, the following may be used to prevent using
 ; tor specific SOCKS queries to lookup addresses (this increases anonymity when
 ; tor is used by preventing your IP being leaked via DNS).
 ; noonion=1
@@ -167,9 +169,6 @@ const FileContents = `[Application Options]
 ; Disable listening for incoming connections.  This will override all listeners.
 ; nolisten=1
 
-; Disable peer bloom filtering.  See BIP0111.
-; nopeerbloomfilters=1
-
 
 ; ------------------------------------------------------------------------------
 ; RPC server options - The following options control the built-in RPC server
@@ -232,7 +231,7 @@ const FileContents = `[Application Options]
 ; ------------------------------------------------------------------------------
 
 ; Set the minimum transaction fee to be considered a non-zero fee,
-; minrelaytxfee=0.01
+; minrelaytxfee=0.0001
 
 ; Rate-limit free transactions to the value 15 * 1000 bytes per
 ; minute.
@@ -247,8 +246,9 @@ const FileContents = `[Application Options]
 ; Do not accept transactions from remote peers.
 ; blocksonly=1
 
-; Relay non-standard transactions regardless of default network settings.
-; relaynonstd=1
+; Accept and relay non-standard transactions to the network regardless of the
+; default network settings.
+; acceptnonstd=1
 
 ; Reject non-standard transactions regardless of default network settings.
 ; rejectnonstd=1
@@ -292,7 +292,7 @@ const FileContents = `[Application Options]
 ; Enable built-in CPU mining.
 ;
 ; NOTE: This is typically only useful for testing purposes such as testnet or
-; simnet since the difficutly on mainnet is far too high for CPU mining to be
+; simnet since the difficulty on mainnet is far too high for CPU mining to be
 ; worth your while.
 ; generate=false
 
@@ -311,15 +311,15 @@ const FileContents = `[Application Options]
 
 ; Specify the maximum block size in bytes to create.  This value will be limited
 ; to the consensus limit if it is larger than this value.
-; blockmaxsize=750000
+; blockmaxsize=375000
 
 ; Specify the size in bytes of the high-priority/low-fee area when creating a
 ; block.  Transactions which consist of large amounts, old inputs, and small
 ; sizes have the highest priority.  One consequence of this is that as low-fee
 ; or free transactions age, they raise in priority thereby making them more
 ; likely to be included in this section of a new block.  This value is limited
-; by the blackmaxsize option and will be limited as needed.
-; blockprioritysize=50000
+; by the blockmaxsize option and will be limited as needed.
+; blockprioritysize=20000
 
 
 ; ------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,10 +7,8 @@ package mempool
 
 import (
 	"container/list"
-	"crypto/rand"
 	"fmt"
 	"math"
-	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,7 +18,6 @@ import (
 	"github.com/decred/dcrd/blockchain/stake"
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrjson"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/mining"
 	"github.com/decred/dcrd/txscript"
@@ -34,22 +31,14 @@ const (
 	// inclusion when generating block templates.
 	DefaultBlockPrioritySize = 20000
 
-	// MinHighPriority is the minimum priority value that allows a
-	// transaction to be considered high priority.
-	MinHighPriority = dcrutil.AtomsPerCoin * 144.0 / 250
-
-	// mempoolHeight is the height used for the "block" height field of the
-	// contextual transaction information provided in a transaction view.
-	mempoolHeight = 0x7fffffff
-
 	// maxRelayFeeMultiplier is the factor that we disallow fees / kB above the
-	// minimum tx fee.  At the current default minimum relay fee of 0.001
+	// minimum tx fee.  At the current default minimum relay fee of 0.0001
 	// DCR/kB, this results in a maximum allowed high fee of 1 DCR/kB.
-	maxRelayFeeMultiplier = 1000
+	maxRelayFeeMultiplier = 1e4
 
-	// maxSSGensDoubleSpends is the maximum number of SSGen double spends
-	// allowed in the pool.
-	maxSSGensDoubleSpends = 5
+	// maxVoteDoubleSpends is the maximum number of vote double spends allowed
+	// in the pool.
+	maxVoteDoubleSpends = 5
 
 	// heightDiffToPruneTicket is the number of blocks to pass by in terms
 	// of height before old tickets are pruned.
@@ -68,13 +57,6 @@ const (
 	// pushes in a transaction, after which it is considered non-standard.
 	maxNullDataOutputs = 4
 )
-
-// VoteTx is a struct describing a block vote (SSGen).
-type VoteTx struct {
-	SsgenHash chainhash.Hash // Vote
-	SstxHash  chainhash.Hash // Ticket
-	Vote      bool
-}
 
 // Config is a descriptor containing the memory pool configuration.
 type Config struct {
@@ -133,6 +115,16 @@ type Config struct {
 	// to use for indexing the unconfirmed transactions in the memory pool.
 	// This can be nil if the address index is not enabled.
 	ExistsAddrIndex *indexers.ExistsAddrIndex
+
+	// AddTxToFeeEstimation defines an optional function to be called whenever a
+	// new transaction is added to the mempool, which can be used to track fees
+	// for the purposes of smart fee estimation.
+	AddTxToFeeEstimation func(txHash *chainhash.Hash, fee, size int64, txType stake.TxType)
+
+	// RemoveTxFromFeeEstimation defines an optional function to be called
+	// whenever a transaction is removed from the mempool in order to track fee
+	// estimation.
+	RemoveTxFromFeeEstimation func(txHash *chainhash.Hash)
 }
 
 // Policy houses the policy (configuration parameters) which is used to
@@ -147,11 +139,11 @@ type Policy struct {
 	// transactions that do not have enough priority to be relayed.
 	DisableRelayPriority bool
 
-	// RelayNonStd defines whether to relay non-standard transactions. If
-	// true, non-standard transactions will be accepted into the mempool
-	// and relayed. Otherwise, all non-standard transactions will be
-	// rejected.
-	RelayNonStd bool
+	// AcceptNonStd defines whether to accept and relay non-standard
+	// transactions to the network. If true, non-standard transactions
+	// will be accepted into the mempool and relayed to the rest of the
+	// network. Otherwise, all non-standard transactions will be rejected.
+	AcceptNonStd bool
 
 	// FreeTxRelayLimit defines the given amount in thousands of bytes
 	// per minute that transactions with no fee are rate limited to.
@@ -171,7 +163,7 @@ type Policy struct {
 	// of the max signature operations for a block.
 	MaxSigOpsPerTx int
 
-	// MinRelayTxFee defines the minimum transaction fee in BTC/kB to be
+	// MinRelayTxFee defines the minimum transaction fee in DCR/kB to be
 	// considered a non-zero fee.
 	MinRelayTxFee dcrutil.Amount
 
@@ -186,6 +178,13 @@ type Policy struct {
 	//
 	// This function must be safe for concurrent access.
 	StandardVerifyFlags func() (txscript.ScriptFlags, error)
+
+	// AcceptSequenceLocks defines the function to determine whether or not
+	// to accept transactions with sequence locks.  Typically this will be
+	// set depending on the result of the fix sequence locks agenda vote.
+	//
+	// This function must be safe for concurrent access.
+	AcceptSequenceLocks func() (bool, error)
 }
 
 // TxDesc is a descriptor containing a transaction in the mempool along with
@@ -196,6 +195,22 @@ type TxDesc struct {
 	// StartingPriority is the priority of the transaction when it was added
 	// to the pool.
 	StartingPriority float64
+}
+
+// VerboseTxDesc is a descriptor containing a transaction in the mempool along
+// with additional more expensive to calculate metadata.  Callers should prefer
+// working with the more efficient TxDesc unless they specifically need access
+// to the additional details provided.
+type VerboseTxDesc struct {
+	TxDesc
+
+	// CurrentPriority is the current priority of the transaction within the
+	// pool.
+	CurrentPriority float64
+
+	// Depends enumerates any unconfirmed transactions in the pool used as
+	// inputs for the transaction.
+	Depends []*TxDesc
 }
 
 // TxPool is used as a source of transactions that need to be mined into blocks
@@ -209,13 +224,12 @@ type TxPool struct {
 	cfg           Config
 	pool          map[chainhash.Hash]*TxDesc
 	orphans       map[chainhash.Hash]*dcrutil.Tx
-	orphansByPrev map[chainhash.Hash]map[chainhash.Hash]*dcrutil.Tx
-	addrindex     map[string]map[chainhash.Hash]struct{} // maps address to txs
+	orphansByPrev map[wire.OutPoint]map[chainhash.Hash]*dcrutil.Tx
 	outpoints     map[wire.OutPoint]*dcrutil.Tx
 
 	// Votes on blocks.
-	votesMtx sync.Mutex
-	votes    map[chainhash.Hash][]*VoteTx
+	votesMtx sync.RWMutex
+	votes    map[chainhash.Hash][]mining.VoteDesc
 
 	pennyTotal    float64 // exponentially decaying total for penny spends.
 	lastPennyUnix int64   // unix time of last ``penny spend''
@@ -225,35 +239,37 @@ type TxPool struct {
 //
 // This function MUST be called with the vote mutex locked (for writes).
 func (mp *TxPool) insertVote(ssgen *dcrutil.Tx) error {
-	voteHash := ssgen.Hash()
 	msgTx := ssgen.MsgTx()
 	ticketHash := &msgTx.TxIn[1].PreviousOutPoint.Hash
 
 	// Get the block it is voting on; here we're agnostic of height.
-	blockHash, blockHeight, err := stake.SSGenBlockVotedOn(msgTx)
-	if err != nil {
-		return err
-	}
+	blockHash, blockHeight := stake.SSGenBlockVotedOn(msgTx)
 
 	// If there are currently no votes for this block,
 	// start a new buffered slice and store it.
 	vts, exists := mp.votes[blockHash]
 	if !exists {
-		vts = make([]*VoteTx, 0, mp.cfg.ChainParams.TicketsPerBlock)
-		mp.votes[blockHash] = vts
+		vts = make([]mining.VoteDesc, 0, mp.cfg.ChainParams.TicketsPerBlock)
 	}
 
 	// Nothing to do if a vote for the ticket is already known.
 	for _, vt := range vts {
-		if vt.SstxHash.IsEqual(ticketHash) {
+		if vt.TicketHash.IsEqual(ticketHash) {
 			return nil
 		}
 	}
 
-	// Append the new vote.
+	voteHash := ssgen.Hash()
 	voteBits := stake.SSGenVoteBits(msgTx)
 	vote := dcrutil.IsFlagSet16(voteBits, dcrutil.BlockValid)
-	mp.votes[blockHash] = append(vts, &VoteTx{*voteHash, *ticketHash, vote})
+	voteTx := mining.VoteDesc{
+		VoteHash:       *voteHash,
+		TicketHash:     *ticketHash,
+		ApprovesParent: vote,
+	}
+
+	// Append the new vote.
+	mp.votes[blockHash] = append(vts, voteTx)
 
 	log.Debugf("Accepted vote %v for block hash %v (height %v), voting "+
 		"%v on the transaction tree", voteHash, blockHash, blockHeight,
@@ -266,12 +282,12 @@ func (mp *TxPool) insertVote(ssgen *dcrutil.Tx) error {
 // hash that are currently available in the mempool.
 //
 // This function is safe for concurrent access.
-func (mp *TxPool) VoteHashesForBlock(blockHash chainhash.Hash) []chainhash.Hash {
-	mp.votesMtx.Lock()
-	defer mp.votesMtx.Unlock()
+func (mp *TxPool) VoteHashesForBlock(blockHash *chainhash.Hash) []chainhash.Hash {
+	mp.votesMtx.RLock()
+	vts, exists := mp.votes[*blockHash]
+	mp.votesMtx.RUnlock()
 
 	// Lookup the vote metadata for the block.
-	vts, exists := mp.votes[blockHash]
 	if !exists || len(vts) == 0 {
 		return nil
 	}
@@ -279,7 +295,7 @@ func (mp *TxPool) VoteHashesForBlock(blockHash chainhash.Hash) []chainhash.Hash 
 	// Copy the vote hashes from the vote metadata.
 	hashes := make([]chainhash.Hash, 0, len(vts))
 	for _, vt := range vts {
-		hashes = append(hashes, vt.SsgenHash)
+		hashes = append(hashes, vt.VoteHash)
 	}
 
 	return hashes
@@ -289,16 +305,15 @@ func (mp *TxPool) VoteHashesForBlock(blockHash chainhash.Hash) []chainhash.Hash 
 // block hashes that are currently available in the mempool.
 //
 // This function is safe for concurrent access.
-func (mp *TxPool) VotesForBlocks(hashes []chainhash.Hash) [][]*VoteTx {
-	result := make([][]*VoteTx, 0, len(hashes))
-	mp.votesMtx.Lock()
+func (mp *TxPool) VotesForBlocks(hashes []chainhash.Hash) [][]mining.VoteDesc {
+	result := make([][]mining.VoteDesc, 0, len(hashes))
+
+	mp.votesMtx.RLock()
 	for _, hash := range hashes {
 		votes := mp.votes[hash]
-		votesCopy := make([]*VoteTx, len(votes))
-		copy(votesCopy, votes)
-		result = append(result, votesCopy)
+		result = append(result, votes)
 	}
-	mp.votesMtx.Unlock()
+	mp.votesMtx.RUnlock()
 
 	return result
 }
@@ -312,8 +327,8 @@ var _ mining.TxSource = (*TxPool)(nil)
 // RemoveOrphan.  See the comment for RemoveOrphan for more details.
 //
 // This function MUST be called with the mempool lock held (for writes).
-func (mp *TxPool) removeOrphan(txHash *chainhash.Hash) {
-	log.Tracef("Removing orphan transaction %v", txHash)
+func (mp *TxPool) removeOrphan(tx *dcrutil.Tx, removeRedeemers bool) {
+	txHash := tx.Hash()
 
 	// Nothing to do if passed tx is not an orphan.
 	tx, exists := mp.orphans[*txHash]
@@ -321,16 +336,35 @@ func (mp *TxPool) removeOrphan(txHash *chainhash.Hash) {
 		return
 	}
 
+	log.Tracef("Removing orphan transaction %v", txHash)
+
 	// Remove the reference from the previous orphan index.
 	for _, txIn := range tx.MsgTx().TxIn {
-		originTxHash := txIn.PreviousOutPoint.Hash
-		if orphans, exists := mp.orphansByPrev[originTxHash]; exists {
-			delete(orphans, *tx.Hash())
+		orphans, exists := mp.orphansByPrev[txIn.PreviousOutPoint]
+		if exists {
+			delete(orphans, *txHash)
 
 			// Remove the map entry altogether if there are no
 			// longer any orphans which depend on it.
 			if len(orphans) == 0 {
-				delete(mp.orphansByPrev, originTxHash)
+				delete(mp.orphansByPrev, txIn.PreviousOutPoint)
+			}
+		}
+	}
+
+	// Remove any orphans that redeem outputs from this one if requested.
+	if removeRedeemers {
+		txType := stake.DetermineTxType(tx.MsgTx())
+		tree := wire.TxTreeRegular
+		if txType != stake.TxTypeRegular {
+			tree = wire.TxTreeStake
+		}
+
+		prevOut := wire.OutPoint{Hash: *txHash, Tree: tree}
+		for txOutIdx := range tx.MsgTx().TxOut {
+			prevOut.Index = uint32(txOutIdx)
+			for _, orphan := range mp.orphansByPrev[prevOut] {
+				mp.removeOrphan(orphan, true)
 			}
 		}
 	}
@@ -343,9 +377,9 @@ func (mp *TxPool) removeOrphan(txHash *chainhash.Hash) {
 // previous orphan index.
 //
 // This function is safe for concurrent access.
-func (mp *TxPool) RemoveOrphan(txHash *chainhash.Hash) {
+func (mp *TxPool) RemoveOrphan(tx *dcrutil.Tx) {
 	mp.mtx.Lock()
-	mp.removeOrphan(txHash)
+	mp.removeOrphan(tx, false)
 	mp.mtx.Unlock()
 }
 
@@ -354,35 +388,19 @@ func (mp *TxPool) RemoveOrphan(txHash *chainhash.Hash) {
 //
 // This function MUST be called with the mempool lock held (for writes).
 func (mp *TxPool) limitNumOrphans() error {
-	if len(mp.orphans)+1 > mp.cfg.Policy.MaxOrphanTxs &&
-		mp.cfg.Policy.MaxOrphanTxs > 0 {
+	if len(mp.orphans)+1 <= mp.cfg.Policy.MaxOrphanTxs {
+		return nil
+	}
 
-		// Generate a cryptographically random hash.
-		randHashBytes := make([]byte, chainhash.HashSize)
-		_, err := rand.Read(randHashBytes)
-		if err != nil {
-			return err
-		}
-		randHashNum := new(big.Int).SetBytes(randHashBytes)
-
-		// Try to find the first entry that is greater than the random
-		// hash.  Use the first entry (which is already pseudorandom due
-		// to Go's range statement over maps) as a fallback if none of
-		// the hashes in the orphan pool are larger than the random
-		// hash.
-		var foundHash *chainhash.Hash
-		for txHash := range mp.orphans {
-			if foundHash == nil {
-				foundHash = &txHash
-			}
-			txHashNum := blockchain.HashToBig(&txHash)
-			if txHashNum.Cmp(randHashNum) > 0 {
-				foundHash = &txHash
-				break
-			}
-		}
-
-		mp.removeOrphan(foundHash)
+	// Remove a random entry from the map.  For most compilers, Go's
+	// range statement iterates starting at a random item although
+	// that is not 100% guaranteed by the spec.  The iteration order
+	// is not important here because an adversary would have to be
+	// able to pull off preimage attacks on the hashing function in
+	// order to target eviction of specific entries anyways.
+	for _, tx := range mp.orphans {
+		mp.removeOrphan(tx, false)
+		break
 	}
 
 	return nil
@@ -392,18 +410,22 @@ func (mp *TxPool) limitNumOrphans() error {
 //
 // This function MUST be called with the mempool lock held (for writes).
 func (mp *TxPool) addOrphan(tx *dcrutil.Tx) {
+	// Nothing to do if no orphans are allowed.
+	if mp.cfg.Policy.MaxOrphanTxs <= 0 {
+		return
+	}
+
 	// Limit the number orphan transactions to prevent memory exhaustion.  A
 	// random orphan is evicted to make room if needed.
 	mp.limitNumOrphans()
 
 	mp.orphans[*tx.Hash()] = tx
 	for _, txIn := range tx.MsgTx().TxIn {
-		originTxHash := txIn.PreviousOutPoint.Hash
-		if _, exists := mp.orphansByPrev[originTxHash]; !exists {
-			mp.orphansByPrev[originTxHash] =
+		if _, exists := mp.orphansByPrev[txIn.PreviousOutPoint]; !exists {
+			mp.orphansByPrev[txIn.PreviousOutPoint] =
 				make(map[chainhash.Hash]*dcrutil.Tx)
 		}
-		mp.orphansByPrev[originTxHash][*tx.Hash()] = tx
+		mp.orphansByPrev[txIn.PreviousOutPoint][*tx.Hash()] = tx
 	}
 
 	log.Debugf("Stored orphan transaction %v (total: %d)", tx.Hash(),
@@ -436,6 +458,22 @@ func (mp *TxPool) maybeAddOrphan(tx *dcrutil.Tx) error {
 	mp.addOrphan(tx)
 
 	return nil
+}
+
+// removeOrphanDoubleSpends removes all orphans which spend outputs spent by the
+// passed transaction from the orphan pool.  Removing those orphans then leads
+// to removing all orphans which rely on them, recursively.  This is necessary
+// when a transaction is added to the main pool because it may spend outputs
+// that orphans also spend.
+//
+// This function MUST be called with the mempool lock held (for writes).
+func (mp *TxPool) removeOrphanDoubleSpends(tx *dcrutil.Tx) {
+	msgTx := tx.MsgTx()
+	for _, txIn := range msgTx.TxIn {
+		for _, orphan := range mp.orphansByPrev[txIn.PreviousOutPoint] {
+			mp.removeOrphan(orphan, true)
+		}
+	}
 }
 
 // isTransactionInPool returns whether or not the passed transaction already
@@ -533,26 +571,41 @@ func (mp *TxPool) HaveTransactions(hashes []*chainhash.Hash) []bool {
 	return haveTxns
 }
 
+// HaveAllTransactions returns whether or not all of the passed transaction
+// hashes exist in the mempool.
+//
+// This function is safe for concurrent access.
+func (mp *TxPool) HaveAllTransactions(hashes []chainhash.Hash) bool {
+	mp.mtx.RLock()
+	inPool := true
+	for _, h := range hashes {
+		if _, exists := mp.pool[h]; !exists {
+			inPool = false
+			break
+		}
+	}
+	mp.mtx.RUnlock()
+	return inPool
+}
+
 // removeTransaction is the internal function which implements the public
 // RemoveTransaction.  See the comment for RemoveTransaction for more details.
 //
 // This function MUST be called with the mempool lock held (for writes).
 func (mp *TxPool) removeTransaction(tx *dcrutil.Tx, removeRedeemers bool) {
-	log.Tracef("Removing transaction %v", tx.Hash())
-
-	msgTx := tx.MsgTx()
 	txHash := tx.Hash()
-	var txType stake.TxType
 	if removeRedeemers {
 		// Remove any transactions which rely on this one.
-		txType = stake.DetermineTxType(msgTx)
+		txType := stake.DetermineTxType(tx.MsgTx())
 		tree := wire.TxTreeRegular
 		if txType != stake.TxTypeRegular {
 			tree = wire.TxTreeStake
 		}
-		for i := uint32(0); i < uint32(len(msgTx.TxOut)); i++ {
-			outpoint := wire.NewOutPoint(txHash, i, tree)
-			if txRedeemer, exists := mp.outpoints[*outpoint]; exists {
+
+		prevOut := wire.OutPoint{Hash: *txHash, Tree: tree}
+		for i := uint32(0); i < uint32(len(tx.MsgTx().TxOut)); i++ {
+			prevOut.Index = i
+			if txRedeemer, exists := mp.outpoints[prevOut]; exists {
 				mp.removeTransaction(txRedeemer, true)
 			}
 		}
@@ -560,6 +613,8 @@ func (mp *TxPool) removeTransaction(tx *dcrutil.Tx, removeRedeemers bool) {
 
 	// Remove the transaction if needed.
 	if txDesc, exists := mp.pool[*txHash]; exists {
+		log.Tracef("Removing transaction %v", txHash)
+
 		// Remove unconfirmed address index entries associated with the
 		// transaction if enabled.
 		if mp.cfg.AddrIndex != nil {
@@ -567,12 +622,17 @@ func (mp *TxPool) removeTransaction(tx *dcrutil.Tx, removeRedeemers bool) {
 		}
 
 		// Mark the referenced outpoints as unspent by the pool.
-
 		for _, txIn := range txDesc.Tx.MsgTx().TxIn {
 			delete(mp.outpoints, txIn.PreviousOutPoint)
 		}
 		delete(mp.pool, *txHash)
 		atomic.StoreInt64(&mp.lastUpdated, time.Now().Unix())
+
+		// Inform associated fee estimator that the transaction has been removed
+		// from the mempool
+		if mp.cfg.RemoveTxFromFeeEstimation != nil {
+			mp.cfg.RemoveTxFromFeeEstimation(txHash)
+		}
 	}
 }
 
@@ -628,7 +688,7 @@ func (mp *TxPool) addTransaction(utxoView *blockchain.UtxoViewpoint,
 			Height: height,
 			Fee:    fee,
 		},
-		StartingPriority: CalcPriority(msgTx, utxoView, height),
+		StartingPriority: mining.CalcPriority(msgTx, utxoView, height),
 	}
 	for _, txIn := range msgTx.TxIn {
 		mp.outpoints[txIn.PreviousOutPoint] = tx
@@ -643,6 +703,13 @@ func (mp *TxPool) addTransaction(utxoView *blockchain.UtxoViewpoint,
 	if mp.cfg.ExistsAddrIndex != nil {
 		mp.cfg.ExistsAddrIndex.AddUnconfirmedTx(msgTx)
 	}
+
+	// Inform the associated fee estimator that a new transaction has been added
+	// to the mempool
+	if mp.cfg.AddTxToFeeEstimation != nil {
+		mp.cfg.AddTxToFeeEstimation(tx.Hash(), fee, int64(msgTx.SerializeSize()),
+			txType)
+	}
 }
 
 // checkPoolDoubleSpend checks whether or not the passed transaction is
@@ -654,8 +721,7 @@ func (mp *TxPool) addTransaction(utxoView *blockchain.UtxoViewpoint,
 func (mp *TxPool) checkPoolDoubleSpend(tx *dcrutil.Tx, txType stake.TxType) error {
 	for i, txIn := range tx.MsgTx().TxIn {
 		// We don't care about double spends of stake bases.
-		if (txType == stake.TxTypeSSGen || txType == stake.TxTypeSSRtx) &&
-			(i == 0) {
+		if i == 0 && (txType == stake.TxTypeSSGen || txType == stake.TxTypeSSRtx) {
 			continue
 		}
 
@@ -669,53 +735,84 @@ func (mp *TxPool) checkPoolDoubleSpend(tx *dcrutil.Tx, txType stake.TxType) erro
 	return nil
 }
 
-// isTxTreeValid checks the map of votes for a block to see if the tx
-// tree regular for the block at HEAD is valid.
-func (mp *TxPool) isTxTreeValid(newestHash *chainhash.Hash) bool {
-	// There are no votes on the block currently; assume it's valid.
-	vts := mp.votes[*newestHash]
-	if len(vts) == 0 {
-		return true
-	}
+// checkVoteDoubleSpend checks whether or not the passed vote is for a block
+// that already has a vote that spends the same ticket available.  This is
+// necessary because the same ticket might be selected for blocks on candidate
+// side chains and thus a more generic check to merely reject double spends of
+// tickets is not possible.
+//
+// This function MUST be called with the mempool lock held (for reads).
+// This function MUST NOT be called with the votes mutex held.
+func (mp *TxPool) checkVoteDoubleSpend(vote *dcrutil.Tx) error {
+	voteTx := vote.MsgTx()
+	ticketSpent := voteTx.TxIn[1].PreviousOutPoint.Hash
+	hashVotedOn, heightVotedOn := stake.SSGenBlockVotedOn(voteTx)
+	mp.votesMtx.RLock()
+	for _, existingVote := range mp.votes[hashVotedOn] {
+		if existingVote.TicketHash == ticketSpent {
+			// Ensure the vote is still actually in the mempool.  This is needed
+			// because the votes map is not currently kept in sync with the
+			// contents of the pool.
+			//
+			// TODO(decred): Ideally the votes map and mempool would be kept in
+			// sync, which would remove the need for this check, however, there
+			// is currently code outside of mempool that relies on being able to
+			// look up seen votes by block hash, regardless of their current
+			// membership in the pool.
+			if _, exists := mp.pool[existingVote.VoteHash]; !exists {
+				continue
+			}
 
-	// There are not possibly enough votes to tell if the txTree is valid;
-	// assume it's valid.
+			mp.votesMtx.RUnlock()
+			str := fmt.Sprintf("vote %v spending ticket %v already votes on "+
+				"block %s (height %d)", vote.Hash(), ticketSpent, hashVotedOn,
+				heightVotedOn)
+			return txRuleError(wire.RejectDuplicate, str)
+		}
+	}
+	mp.votesMtx.RUnlock()
+
+	return nil
+}
+
+// IsRegTxTreeKnownDisapproved returns whether or not the regular tree of the
+// block represented by the provided hash is known to be disapproved according
+// to the votes currently in the memory pool.
+//
+// The function is safe for concurrent access.
+func (mp *TxPool) IsRegTxTreeKnownDisapproved(hash *chainhash.Hash) bool {
+	mp.votesMtx.RLock()
+	vts := mp.votes[*hash]
+	mp.votesMtx.RUnlock()
+
+	// There are not possibly enough votes to tell if the regular transaction
+	// tree is approved or not, so assume it's valid.
 	if len(vts) <= int(mp.cfg.ChainParams.TicketsPerBlock/2) {
-		return true
+		return false
 	}
 
-	// Otherwise, tally the votes and determine if it's valid or not.
-	yea := 0
-	nay := 0
+	// Otherwise, tally the votes and determine if it's approved or not.
+	var yes, no int
 	for _, vote := range vts {
-		if vote.Vote {
-			yea++
+		if vote.ApprovesParent {
+			yes++
 		} else {
-			nay++
+			no++
 		}
 	}
 
-	return yea > nay
-}
-
-// IsTxTreeValid calls isTxTreeValid, but makes it safe for concurrent access.
-func (mp *TxPool) IsTxTreeValid(best *chainhash.Hash) bool {
-	mp.votesMtx.Lock()
-	isValid := mp.isTxTreeValid(best)
-	mp.votesMtx.Unlock()
-
-	return isValid
+	return yes <= no
 }
 
 // fetchInputUtxos loads utxo details about the input transactions referenced by
-// the passed transaction.  First, it loads the details form the viewpoint of
+// the passed transaction.  First, it loads the details from the viewpoint of
 // the main chain, then it adjusts them based upon the contents of the
 // transaction pool.
 //
 // This function MUST be called with the mempool lock held (for reads).
 func (mp *TxPool) fetchInputUtxos(tx *dcrutil.Tx) (*blockchain.UtxoViewpoint, error) {
-	tv := mp.IsTxTreeValid(mp.cfg.BestHash())
-	utxoView, err := mp.cfg.FetchUtxoView(tx, tv)
+	knownDisapproved := mp.IsRegTxTreeKnownDisapproved(mp.cfg.BestHash())
+	utxoView, err := mp.cfg.FetchUtxoView(tx, !knownDisapproved)
 	if err != nil {
 		return nil, err
 	}
@@ -727,7 +824,7 @@ func (mp *TxPool) fetchInputUtxos(tx *dcrutil.Tx) (*blockchain.UtxoViewpoint, er
 		}
 
 		if poolTxDesc, exists := mp.pool[originHash]; exists {
-			utxoView.AddTxOuts(poolTxDesc.Tx, mempoolHeight,
+			utxoView.AddTxOuts(poolTxDesc.Tx, mining.UnminedHeight,
 				wire.NullBlockIndex)
 		}
 	}
@@ -740,7 +837,7 @@ func (mp *TxPool) fetchInputUtxos(tx *dcrutil.Tx) (*blockchain.UtxoViewpoint, er
 // orphans.
 //
 // This function is safe for concurrent access.
-func (mp *TxPool) FetchTransaction(txHash *chainhash.Hash, includeRecentBlock bool) (*dcrutil.Tx, error) {
+func (mp *TxPool) FetchTransaction(txHash *chainhash.Hash) (*dcrutil.Tx, error) {
 	// Protect concurrent access.
 	mp.mtx.RLock()
 	txDesc, exists := mp.pool[*txHash]
@@ -748,22 +845,6 @@ func (mp *TxPool) FetchTransaction(txHash *chainhash.Hash, includeRecentBlock bo
 
 	if exists {
 		return txDesc.Tx, nil
-	}
-
-	// For Decred, the latest block is considered "unconfirmed"
-	// for the regular transaction tree. Search that if the
-	// user indicates too, as well.
-	if includeRecentBlock {
-		bl, err := mp.cfg.BlockByHash(mp.cfg.BestHash())
-		if err != nil {
-			return nil, err
-		}
-
-		for _, tx := range bl.Transactions() {
-			if tx.Hash().IsEqual(txHash) {
-				return tx, nil
-			}
-		}
 	}
 
 	return nil, fmt.Errorf("transaction is not in the pool")
@@ -779,19 +860,20 @@ func (mp *TxPool) FetchTransaction(txHash *chainhash.Hash, includeRecentBlock bo
 // so that we can easily pick different stake tx types from the mempool later.
 // This should probably be done at the bottom using "IsSStx" etc functions.
 // It should also set the dcrutil tree type for the tx as well.
-func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allowHighFees bool) ([]*chainhash.Hash, error) {
+func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allowHighFees, rejectDupOrphans bool) ([]*chainhash.Hash, error) {
 	msgTx := tx.MsgTx()
 	txHash := tx.Hash()
 	// Don't accept the transaction if it already exists in the pool.  This
-	// applies to orphan transactions as well.  This check is intended to
-	// be a quick check to weed out duplicates.
-	if mp.haveTransaction(txHash) {
+	// applies to orphan transactions as well when the reject duplicate
+	// orphans flag is set.  This check is intended to be a quick check to
+	// weed out duplicates.
+	if mp.isTransactionInPool(txHash) || (rejectDupOrphans && mp.isOrphanInPool(txHash)) {
 		str := fmt.Sprintf("already have transaction %v", txHash)
 		return nil, txRuleError(wire.RejectDuplicate, str)
 	}
 
 	// Perform preliminary sanity checks on the transaction.  This makes
-	// use of chain which contains the invariant rules for what
+	// use of blockchain which contains the invariant rules for what
 	// transactions are allowed into blocks.
 	err := blockchain.CheckTransactionSanity(msgTx, mp.cfg.ChainParams)
 	if err != nil {
@@ -808,21 +890,18 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 		return nil, txRuleError(wire.RejectInvalid, str)
 	}
 
-	// Don't accept transactions with a lock time after the maximum int32
-	// value for now.  This is an artifact of older bitcoind clients which
-	// treated this field as an int32 and would treat anything larger
-	// incorrectly (as negative).
-	if msgTx.LockTime > math.MaxInt32 {
-		str := fmt.Sprintf("transaction %v has a lock time after "+
-			"2038 which is not accepted yet", txHash)
-		return nil, txRuleError(wire.RejectNonstandard, str)
-	}
-
 	// Get the current height of the main chain.  A standalone transaction
 	// will be mined into the next block at best, so its height is at least
 	// one more than the current height.
 	bestHeight := mp.cfg.BestHeight()
 	nextBlockHeight := bestHeight + 1
+
+	// Don't accept transactions that will be expired as of the next block.
+	if blockchain.IsExpired(tx, nextBlockHeight) {
+		str := fmt.Sprintf("transaction %v expired at height %d",
+			txHash, msgTx.Expiry)
+		return nil, txRuleError(wire.RejectInvalid, str)
+	}
 
 	// Determine what type of transaction we're dealing with (regular or stake).
 	// Then, be sure to set the tx tree correctly as it's possible a use submitted
@@ -833,11 +912,56 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 	} else {
 		tx.SetTree(wire.TxTreeStake)
 	}
+	isVote := txType == stake.TxTypeSSGen
 
-	// Don't allow non-standard transactions if the network parameters
-	// forbid their relaying.
+	// Choose whether or not to accept transactions with sequence locks enabled.
+	//
+	// Typically, this will be set based on the result of the fix sequence locks
+	// agenda vote.
+	acceptSeqLocks, err := mp.cfg.Policy.AcceptSequenceLocks()
+	if err != nil {
+		if cerr, ok := err.(blockchain.RuleError); ok {
+			return nil, chainRuleError(cerr)
+		}
+		return nil, err
+	}
+	if !acceptSeqLocks {
+		if msgTx.Version >= 2 && !isVote {
+			for _, txIn := range msgTx.TxIn {
+				sequenceNum := txIn.Sequence
+				if sequenceNum&wire.SequenceLockTimeDisabled != 0 {
+					continue
+				}
+
+				str := "violates sequence lock consensus bug"
+				return nil, txRuleError(wire.RejectInvalid, str)
+			}
+		}
+	}
+
+	// Reject votes before stake validation height.
+	stakeValidationHeight := mp.cfg.ChainParams.StakeValidationHeight
+	if isVote && nextBlockHeight < stakeValidationHeight {
+		str := fmt.Sprintf("votes are not valid until block height %d (next "+
+			"block height %d)", stakeValidationHeight, nextBlockHeight)
+		return nil, txRuleError(wire.RejectInvalid, str)
+	}
+
+	// Reject revocations before they can possibly be valid.  A vote must be
+	// missed for a revocation to be valid and votes are not allowed until stake
+	// validation height, so, a revocations can't possibly be valid until one
+	// block later.
+	isRevocation := txType == stake.TxTypeSSRtx
+	if isRevocation && nextBlockHeight < stakeValidationHeight+1 {
+		str := fmt.Sprintf("revocations are not valid until block height %d "+
+			"(next block height %d)", stakeValidationHeight+1, nextBlockHeight)
+		return nil, txRuleError(wire.RejectInvalid, str)
+	}
+
+	// Don't allow non-standard transactions if the mempool config forbids
+	// their acceptance and relaying.
 	medianTime := mp.cfg.PastMedianTime()
-	if !mp.cfg.Policy.RelayNonStd {
+	if !mp.cfg.Policy.AcceptNonStd {
 		err := checkTransactionStandard(tx, txType, nextBlockHeight,
 			medianTime, mp.cfg.Policy.MinRelayTxFee,
 			mp.cfg.Policy.MaxTxVersion)
@@ -857,7 +981,8 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 
 	// If the transaction is a ticket, ensure that it meets the next
 	// stake difficulty.
-	if txType == stake.TxTypeSStx {
+	isTicket := txType == stake.TxTypeSStx
+	if isTicket {
 		sDiff, err := mp.cfg.NextStakeDifficulty()
 		if err != nil {
 			// This is an unexpected error so don't turn it into a
@@ -867,70 +992,73 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 
 		if msgTx.TxOut[0].Value < sDiff {
 			str := fmt.Sprintf("transaction %v has not enough funds "+
-				"to meet stake difficuly (ticket diff %v < next diff %v)",
+				"to meet stake difficulty (ticket diff %v < next diff %v)",
 				txHash, msgTx.TxOut[0].Value, sDiff)
 			return nil, txRuleError(wire.RejectInsufficientFee, str)
 		}
 	}
 
-	// Handle stake transaction double spending exceptions.
-	if (txType == stake.TxTypeSSGen) || (txType == stake.TxTypeSSRtx) {
-		if txType == stake.TxTypeSSGen {
-			ssGenAlreadyFound := 0
-			for _, mpTx := range mp.pool {
-				if mpTx.Type == stake.TxTypeSSGen {
-					if mpTx.Tx.MsgTx().TxIn[1].PreviousOutPoint ==
-						msgTx.TxIn[1].PreviousOutPoint {
-						ssGenAlreadyFound++
-					}
-				}
-				if ssGenAlreadyFound > maxSSGensDoubleSpends {
-					str := fmt.Sprintf("transaction %v in the pool "+
-						"with more than %v ssgens",
-						msgTx.TxIn[1].PreviousOutPoint,
-						maxSSGensDoubleSpends)
-					return nil, txRuleError(wire.RejectDuplicate, str)
-				}
-			}
-		}
-
-		if txType == stake.TxTypeSSRtx {
-			for _, mpTx := range mp.pool {
-				if mpTx.Type == stake.TxTypeSSRtx {
-					if mpTx.Tx.MsgTx().TxIn[0].PreviousOutPoint ==
-						msgTx.TxIn[0].PreviousOutPoint {
-						str := fmt.Sprintf("transaction %v in the pool "+
-							" as a ssrtx. Only one ssrtx allowed.",
-							msgTx.TxIn[0].PreviousOutPoint)
-						return nil, txRuleError(wire.RejectDuplicate, str)
-					}
-				}
-			}
-		}
-	} else {
-		// The transaction may not use any of the same outputs as other
-		// transactions already in the pool as that would ultimately result in a
-		// double spend.  This check is intended to be quick and therefore only
-		// detects double spends within the transaction pool itself.  The
-		// transaction could still be double spending coins from the main chain
-		// at this point.  There is a more in-depth check that happens later
-		// after fetching the referenced transaction inputs from the main chain
-		// which examines the actual spend data and prevents double spends.
+	// Aside from a few exceptions for votes and revocations, the transaction
+	// may not use any of the same outputs as other transactions already in the
+	// pool as that would ultimately result in a double spend.  This check is
+	// intended to be quick and therefore only detects double spends within the
+	// transaction pool itself.  The transaction could still be double spending
+	// coins from the main chain at this point.  There is a more in-depth check
+	// that happens later after fetching the referenced transaction inputs from
+	// the main chain which examines the actual spend data and prevents double
+	// spends.
+	if !isVote && !isRevocation {
 		err = mp.checkPoolDoubleSpend(tx, txType)
 		if err != nil {
 			return nil, err
 		}
-	}
 
-	// Votes that are on too old of blocks are rejected.
-	if txType == stake.TxTypeSSGen {
-		_, voteHeight, err := stake.SSGenBlockVotedOn(msgTx)
+	} else if isVote {
+		// Reject votes on blocks that already have a vote that spends the same
+		// ticket available.  This is necessary because the same ticket might be
+		// selected for blocks on candidate side chains and thus a more generic
+		// check to merely reject double spends of tickets is not possible.
+		err := mp.checkVoteDoubleSpend(tx)
 		if err != nil {
 			return nil, err
 		}
 
+		voteAlreadyFound := 0
+		for _, mpTx := range mp.pool {
+			if mpTx.Type == stake.TxTypeSSGen {
+				if mpTx.Tx.MsgTx().TxIn[1].PreviousOutPoint ==
+					msgTx.TxIn[1].PreviousOutPoint {
+					voteAlreadyFound++
+				}
+			}
+			if voteAlreadyFound >= maxVoteDoubleSpends {
+				str := fmt.Sprintf("transaction %v in the pool with more than "+
+					"%v votes", msgTx.TxIn[1].PreviousOutPoint,
+					maxVoteDoubleSpends)
+				return nil, txRuleError(wire.RejectDuplicate, str)
+			}
+		}
+
+	} else if isRevocation {
+		for _, mpTx := range mp.pool {
+			if mpTx.Type == stake.TxTypeSSRtx {
+				if mpTx.Tx.MsgTx().TxIn[0].PreviousOutPoint ==
+					msgTx.TxIn[0].PreviousOutPoint {
+					str := fmt.Sprintf("transaction %v in the pool as a "+
+						"revocation. Only one revocation is allowed.",
+						msgTx.TxIn[0].PreviousOutPoint)
+					return nil, txRuleError(wire.RejectDuplicate, str)
+				}
+			}
+		}
+	}
+
+	// Votes that are on too old of blocks are rejected.
+	if isVote {
+		_, voteHeight := stake.SSGenBlockVotedOn(msgTx)
 		if (int64(voteHeight) < nextBlockHeight-maximumVoteAgeDelta) &&
 			!mp.cfg.Policy.AllowOldVotes {
+
 			str := fmt.Sprintf("transaction %v votes on old "+
 				"block height of %v which is before the "+
 				"current cutoff height of %v",
@@ -952,7 +1080,7 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 	}
 
 	// Don't allow the transaction if it exists in the main chain and is not
-	// not already fully spent.
+	// already fully spent.
 	txEntry := utxoView.LookupEntry(txHash)
 	if txEntry != nil && !txEntry.IsFullySpent() {
 		return nil, txRuleError(wire.RejectDuplicate,
@@ -963,7 +1091,7 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 	// Transaction is an orphan if any of the inputs don't exist.
 	var missingParents []*chainhash.Hash
 	for i, txIn := range msgTx.TxIn {
-		if i == 0 && txType == stake.TxTypeSSGen {
+		if i == 0 && isVote {
 			continue
 		}
 
@@ -1012,7 +1140,7 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 	}
 
 	// Perform several checks on the transaction inputs using the invariant
-	// rules in chain for what transactions are allowed into blocks.
+	// rules in blockchain for what transactions are allowed into blocks.
 	// Also returns the fees associated with the transaction which will be
 	// used later.  The fraud proof is not checked because it will be
 	// filled in by the miner.
@@ -1025,9 +1153,9 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 		return nil, err
 	}
 
-	// Don't allow transactions with non-standard inputs if the network
-	// parameters forbid their relaying.
-	if !mp.cfg.Policy.RelayNonStd {
+	// Don't allow transactions with non-standard inputs if the mempool config
+	// forbids their acceptance and relaying.
+	if !mp.cfg.Policy.AcceptNonStd {
 		err := checkInputsStandard(tx, txType, utxoView)
 		if err != nil {
 			// Attempt to extract a reject code from the error so
@@ -1061,7 +1189,7 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 		return nil, err
 	}
 
-	numSigOps += blockchain.CountSigOps(tx, false, (txType == stake.TxTypeSSGen))
+	numSigOps += blockchain.CountSigOps(tx, false, isVote)
 	if numSigOps > mp.cfg.Policy.MaxSigOpsPerTx {
 		str := fmt.Sprintf("transaction %v has too many sigops: %d > %d",
 			txHash, numSigOps, mp.cfg.Policy.MaxSigOpsPerTx)
@@ -1103,12 +1231,12 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 	if isNew && !mp.cfg.Policy.DisableRelayPriority && txFee < minFee &&
 		txType == stake.TxTypeRegular {
 
-		currentPriority := CalcPriority(msgTx, utxoView,
+		currentPriority := mining.CalcPriority(msgTx, utxoView,
 			nextBlockHeight)
-		if currentPriority <= MinHighPriority {
+		if currentPriority <= mining.MinHighPriority {
 			str := fmt.Sprintf("transaction %v has insufficient "+
 				"priority (%g <= %g)", txHash,
-				currentPriority, MinHighPriority)
+				currentPriority, mining.MinHighPriority)
 			return nil, txRuleError(wire.RejectInsufficientFee, str)
 		}
 	}
@@ -1142,7 +1270,7 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 	// also performed on regular transactions above, but fees lower than the
 	// miniumum may be allowed when there is sufficient priority, and these
 	// checks aren't desired for ticket purchases.
-	if txType == stake.TxTypeSStx {
+	if isTicket {
 		minTicketFee := calcMinRequiredTxRelayFee(serializedSize,
 			mp.cfg.Policy.MinRelayTxFee)
 		if txFee < minTicketFee {
@@ -1185,9 +1313,8 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 	// Add to transaction pool.
 	mp.addTransaction(utxoView, tx, txType, bestHeight, txFee)
 
-	// If it's an SSGen (vote), insert it into the list of
-	// votes.
-	if txType == stake.TxTypeSSGen {
+	// Keep track of vote separately.
+	if isVote {
 		mp.votesMtx.Lock()
 		err := mp.insertVote(tx)
 		mp.votesMtx.Unlock()
@@ -1213,7 +1340,7 @@ func (mp *TxPool) maybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit, allow
 func (mp *TxPool) MaybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit bool) ([]*chainhash.Hash, error) {
 	// Protect concurrent access.
 	mp.mtx.Lock()
-	hashes, err := mp.maybeAcceptTransaction(tx, isNew, rateLimit, true)
+	hashes, err := mp.maybeAcceptTransaction(tx, isNew, rateLimit, true, true)
 	mp.mtx.Unlock()
 
 	return hashes, err
@@ -1223,82 +1350,86 @@ func (mp *TxPool) MaybeAcceptTransaction(tx *dcrutil.Tx, isNew, rateLimit bool) 
 // ProcessOrphans.  See the comment for ProcessOrphans for more details.
 //
 // This function MUST be called with the mempool lock held (for writes).
-func (mp *TxPool) processOrphans(hash *chainhash.Hash) []*dcrutil.Tx {
+func (mp *TxPool) processOrphans(acceptedTx *dcrutil.Tx) []*dcrutil.Tx {
 	var acceptedTxns []*dcrutil.Tx
 
-	// Start with processing at least the passed hash.
-	processHashes := list.New()
-	processHashes.PushBack(hash)
-	for processHashes.Len() > 0 {
-		// Pop the first hash to process.
-		firstElement := processHashes.Remove(processHashes.Front())
-		processHash := firstElement.(*chainhash.Hash)
+	// Start with processing at least the passed transaction.
+	processList := list.New()
+	processList.PushBack(acceptedTx)
+	for processList.Len() > 0 {
+		// Pop the transaction to process from the front of the list.
+		firstElement := processList.Remove(processList.Front())
+		processItem := firstElement.(*dcrutil.Tx)
 
-		// Look up all orphans that are referenced by the transaction we
-		// just accepted.  This will typically only be one, but it could
-		// be multiple if the referenced transaction contains multiple
-		// outputs.  Skip to the next item on the list of hashes to
-		// process if there are none.
-		orphans, exists := mp.orphansByPrev[*processHash]
-		if !exists || orphans == nil {
-			continue
+		txType := stake.DetermineTxType(processItem.MsgTx())
+		tree := wire.TxTreeRegular
+		if txType != stake.TxTypeRegular {
+			tree = wire.TxTreeStake
 		}
 
-		for _, tx := range orphans {
-			// Remove the orphan from the orphan pool.  Current
-			// behavior requires that all saved orphans with
-			// a newly accepted parent are removed from the orphan
-			// pool and potentially added to the memory pool, but
-			// transactions which cannot be added to memory pool
-			// (including due to still being orphans) are expunged
-			// from the orphan pool.
+		prevOut := wire.OutPoint{Hash: *processItem.Hash(), Tree: tree}
+		for txOutIdx := range processItem.MsgTx().TxOut {
+			// Look up all orphans that redeem the output that is
+			// now available.  This will typically only be one, but
+			// it could be multiple if the orphan pool contains
+			// double spends.  While it may seem odd that the orphan
+			// pool would allow this since there can only possibly
+			// ultimately be a single redeemer, it's important to
+			// track it this way to prevent malicious actors from
+			// being able to purposely constructing orphans that
+			// would otherwise make outputs unspendable.
 			//
-			// TODO(jrick): The above described behavior sounds
-			// like a bug, and I think we should investigate
-			// potentially moving orphans to the memory pool, but
-			// leaving them in the orphan pool if not all parent
-			// transactions are known yet.
-			orphanHash := tx.Hash()
-			mp.removeOrphan(orphanHash)
-
-			// Potentially accept the transaction into the
-			// transaction pool.
-			missingParents, err := mp.maybeAcceptTransaction(tx,
-				true, true, true)
-			if err != nil {
-				// TODO: Remove orphans that depend on this
-				// failed transaction.
-				log.Debugf("Unable to move orphan transaction "+
-					"%v to mempool: %v", tx.Hash(), err)
+			// Skip to the next available output if there are none.
+			prevOut.Index = uint32(txOutIdx)
+			orphans, exists := mp.orphansByPrev[prevOut]
+			if !exists {
 				continue
 			}
 
-			if len(missingParents) > 0 {
-				// Transaction is still an orphan, so add it
-				// back.
-				mp.addOrphan(tx)
-				continue
+			// Potentially accept an orphan into the tx pool.
+			for _, tx := range orphans {
+				missing, err := mp.maybeAcceptTransaction(
+					tx, true, true, true, false)
+				if err != nil {
+					// The orphan is now invalid, so there
+					// is no way any other orphans which
+					// redeem any of its outputs can be
+					// accepted.  Remove them.
+					mp.removeOrphan(tx, true)
+					break
+				}
+
+				// Transaction is still an orphan.  Try the next
+				// orphan which redeems this output.
+				if len(missing) > 0 {
+					continue
+				}
+
+				// Transaction was accepted into the main pool.
+				//
+				// Add it to the list of accepted transactions
+				// that are no longer orphans, remove it from
+				// the orphan pool, and add it to the list of
+				// transactions to process so any orphans that
+				// depend on it are handled too.
+				acceptedTxns = append(acceptedTxns, tx)
+				mp.removeOrphan(tx, false)
+				processList.PushBack(tx)
+
+				// Only one transaction for this outpoint can be
+				// accepted, so the rest are now double spends
+				// and are removed later.
+				break
 			}
-
-			// Add this transaction to the list of transactions
-			// that are no longer orphans.
-			acceptedTxns = append(acceptedTxns, tx)
-
-			// Add this transaction to the list of transactions to
-			// process so any orphans that depend on this one are
-			// handled too.
-			//
-			// TODO(jrick): In the case that this is still an orphan,
-			// we know that any other transactions in the orphan
-			// pool with this orphan as their parent are still
-			// orphans as well, and should be removed.  While
-			// recursively calling removeOrphan and
-			// maybeAcceptTransaction on these transactions is not
-			// wrong per se, it is overkill if all we care about is
-			// recursively removing child transactions of this
-			// orphan.
-			processHashes.PushBack(orphanHash)
 		}
+	}
+
+	// Recursively remove any orphans that also redeem any outputs redeemed
+	// by the accepted transactions since those are now definitive double
+	// spends.
+	mp.removeOrphanDoubleSpends(acceptedTx)
+	for _, tx := range acceptedTxns {
+		mp.removeOrphanDoubleSpends(tx)
 	}
 
 	return acceptedTxns
@@ -1335,25 +1466,31 @@ func (mp *TxPool) pruneStakeTx(requiredStakeDifficulty, height int64) {
 	}
 }
 
-// PruneExpiredTx prunes expired transactions from the mempool that may no longer
-// be able to be included into a block.
-func (mp *TxPool) PruneExpiredTx(height int64) {
-	// Protect concurrent access.
-	mp.mtx.Lock()
-	mp.pruneExpiredTx(height)
-	mp.mtx.Unlock()
-}
+// pruneExpiredTx prunes expired transactions from the mempool that are no
+// longer able to be included into a block.
+//
+// This function MUST be called with the mempool lock held (for writes).
+func (mp *TxPool) pruneExpiredTx() {
+	nextBlockHeight := mp.cfg.BestHeight() + 1
 
-func (mp *TxPool) pruneExpiredTx(height int64) {
 	for _, tx := range mp.pool {
-		if tx.Tx.MsgTx().Expiry != 0 {
-			if height >= int64(tx.Tx.MsgTx().Expiry) {
-				log.Debugf("Pruning expired transaction %v "+
-					"from the mempool", tx.Tx.Hash())
-				mp.removeTransaction(tx.Tx, true)
-			}
+		if blockchain.IsExpired(tx.Tx, nextBlockHeight) {
+			log.Debugf("Pruning expired transaction %v from the mempool",
+				tx.Tx.Hash())
+			mp.removeTransaction(tx.Tx, true)
 		}
 	}
+}
+
+// PruneExpiredTx prunes expired transactions from the mempool that may no longer
+// be able to be included into a block.
+//
+// This function is safe for concurrent access.
+func (mp *TxPool) PruneExpiredTx() {
+	// Protect concurrent access.
+	mp.mtx.Lock()
+	mp.pruneExpiredTx()
+	mp.mtx.Unlock()
 }
 
 // ProcessOrphans determines if there are any orphans which depend on the passed
@@ -1366,9 +1503,9 @@ func (mp *TxPool) pruneExpiredTx(height int64) {
 // no transactions were moved from the orphan pool to the mempool.
 //
 // This function is safe for concurrent access.
-func (mp *TxPool) ProcessOrphans(hash *chainhash.Hash) []*dcrutil.Tx {
+func (mp *TxPool) ProcessOrphans(acceptedTx *dcrutil.Tx) []*dcrutil.Tx {
 	mp.mtx.Lock()
-	acceptedTxns := mp.processOrphans(hash)
+	acceptedTxns := mp.processOrphans(acceptedTx)
 	mp.mtx.Unlock()
 	return acceptedTxns
 }
@@ -1397,9 +1534,8 @@ func (mp *TxPool) ProcessTransaction(tx *dcrutil.Tx, allowOrphan, rateLimit, all
 	}()
 
 	// Potentially accept the transaction to the memory pool.
-	var missingParents []*chainhash.Hash
-	missingParents, err = mp.maybeAcceptTransaction(tx, true, rateLimit,
-		allowHighFees)
+	missingParents, err := mp.maybeAcceptTransaction(tx, true, rateLimit,
+		allowHighFees, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1407,10 +1543,10 @@ func (mp *TxPool) ProcessTransaction(tx *dcrutil.Tx, allowOrphan, rateLimit, all
 	// If len(missingParents) == 0 then we know the tx is NOT an orphan.
 	if len(missingParents) == 0 {
 		// Accept any orphan transactions that depend on this
-		// transaction (they are no longer orphans if all inputs are
-		// now available) and repeat for those accepted transactions
-		// until there are no more.
-		newTxs := mp.processOrphans(tx.Hash())
+		// transaction (they may no longer be orphans if all inputs
+		// are now available) and repeat for those accepted
+		// transactions until there are no more.
+		newTxs := mp.processOrphans(tx)
 		acceptedTxs := make([]*dcrutil.Tx, len(newTxs)+1)
 
 		// Add the parent transaction first so remote nodes
@@ -1475,7 +1611,7 @@ func (mp *TxPool) TxHashes() []*chainhash.Hash {
 }
 
 // TxDescs returns a slice of descriptors for all the transactions in the pool.
-// The descriptors are to be treated as read only.
+// The descriptors must be treated as read only.
 //
 // This function is safe for concurrent access.
 func (mp *TxPool) TxDescs() []*TxDesc {
@@ -1489,6 +1625,50 @@ func (mp *TxPool) TxDescs() []*TxDesc {
 	mp.mtx.RUnlock()
 
 	return descs
+}
+
+// VerboseTxDescs returns a slice of verbose descriptors for all the
+// transactions in the pool.  The descriptors must be treated as read only.
+//
+// Callers should prefer working with the more efficient TxDescs unless they
+// specifically need access to the additional details provided.
+//
+// This function is safe for concurrent access.
+func (mp *TxPool) VerboseTxDescs() []*VerboseTxDesc {
+	mp.mtx.RLock()
+	defer mp.mtx.RUnlock()
+
+	result := make([]*VerboseTxDesc, 0, len(mp.pool))
+	bestHeight := mp.cfg.BestHeight()
+
+	for _, desc := range mp.pool {
+		// Calculate the current priority based on inputs to the transaction.
+		// Use zero if one or more of the input transactions can't be found for
+		// some reason.
+		tx := desc.Tx
+		var currentPriority float64
+		utxos, err := mp.fetchInputUtxos(tx)
+		if err == nil {
+			currentPriority = mining.CalcPriority(tx.MsgTx(), utxos,
+				bestHeight+1)
+		}
+
+		// Create the descriptor and add dependencies as needed.
+		vtxd := &VerboseTxDesc{
+			TxDesc:          *desc,
+			CurrentPriority: currentPriority,
+		}
+		for _, txIn := range tx.MsgTx().TxIn {
+			hash := &txIn.PreviousOutPoint.Hash
+			if depDesc, ok := mp.pool[*hash]; ok {
+				vtxd.Depends = append(vtxd.Depends, depDesc)
+			}
+		}
+
+		result = append(result, vtxd)
+	}
+
+	return result
 }
 
 // MiningDescs returns a slice of mining descriptors for all the transactions
@@ -1509,83 +1689,12 @@ func (mp *TxPool) MiningDescs() []*mining.TxDesc {
 	return descs
 }
 
-// RawMempoolVerbose returns all of the entries in the mempool filtered by the
-// provided stake type as a fully populated JSON result.  The filter type can be
-// nil in which case all transactions will be returned.
-//
-// This function is safe for concurrent access.
-func (mp *TxPool) RawMempoolVerbose(filterType *stake.TxType) map[string]*dcrjson.GetRawMempoolVerboseResult {
-	mp.mtx.RLock()
-	defer mp.mtx.RUnlock()
-
-	result := make(map[string]*dcrjson.GetRawMempoolVerboseResult,
-		len(mp.pool))
-	bestHeight := mp.cfg.BestHeight()
-
-	for _, desc := range mp.pool {
-		// Skip entries that don't match the requested stake type if
-		// specified.
-		if filterType != nil && desc.Type != *filterType {
-			continue
-		}
-
-		// Calculate the current priority based on the inputs to
-		// the transaction.  Use zero if one or more of the
-		// input transactions can't be found for some reason.
-		tx := desc.Tx
-		var currentPriority float64
-		utxos, err := mp.fetchInputUtxos(tx)
-		if err == nil {
-			currentPriority = CalcPriority(tx.MsgTx(), utxos,
-				bestHeight+1)
-		}
-
-		mpd := &dcrjson.GetRawMempoolVerboseResult{
-			Size:             int32(tx.MsgTx().SerializeSize()),
-			Fee:              dcrutil.Amount(desc.Fee).ToCoin(),
-			Time:             desc.Added.Unix(),
-			Height:           desc.Height,
-			StartingPriority: desc.StartingPriority,
-			CurrentPriority:  currentPriority,
-			Depends:          make([]string, 0),
-		}
-		for _, txIn := range tx.MsgTx().TxIn {
-			hash := &txIn.PreviousOutPoint.Hash
-			if mp.haveTransaction(hash) {
-				mpd.Depends = append(mpd.Depends,
-					hash.String())
-			}
-		}
-
-		result[tx.Hash().String()] = mpd
-	}
-
-	return result
-}
-
 // LastUpdated returns the last time a transaction was added to or removed from
 // the main pool.  It does not include the orphan pool.
 //
 // This function is safe for concurrent access.
 func (mp *TxPool) LastUpdated() time.Time {
 	return time.Unix(atomic.LoadInt64(&mp.lastUpdated), 0)
-}
-
-// CheckIfTxsExist checks a list of transaction hashes against the mempool
-// and returns true if they all exist in the mempool, otherwise false.
-//
-// This function is safe for concurrent access.
-func (mp *TxPool) CheckIfTxsExist(hashes []chainhash.Hash) bool {
-	mp.mtx.RLock()
-	inPool := true
-	for _, h := range hashes {
-		if _, exists := mp.pool[h]; !exists {
-			inPool = false
-			break
-		}
-	}
-	mp.mtx.RUnlock()
-	return inPool
 }
 
 // New returns a new memory pool for validating and storing standalone
@@ -1595,8 +1704,8 @@ func New(cfg *Config) *TxPool {
 		cfg:           *cfg,
 		pool:          make(map[chainhash.Hash]*TxDesc),
 		orphans:       make(map[chainhash.Hash]*dcrutil.Tx),
-		orphansByPrev: make(map[chainhash.Hash]map[chainhash.Hash]*dcrutil.Tx),
+		orphansByPrev: make(map[wire.OutPoint]map[chainhash.Hash]*dcrutil.Tx),
 		outpoints:     make(map[wire.OutPoint]*dcrutil.Tx),
-		votes:         make(map[chainhash.Hash][]*VoteTx),
+		votes:         make(map[chainhash.Hash][]mining.VoteDesc),
 	}
 }

@@ -1,10 +1,10 @@
-// Copyright (c) 2013-2015 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
 /*
-Package txscript implements the decred transaction script language.
+Package txscript implements the Decred transaction script language.
 
 This package provides data structures and functions to parse and execute
 decred transaction scripts.
@@ -13,7 +13,7 @@ Script Overview
 
 Decred transaction scripts are written in a stack-base, FORTH-like language.
 
-The decred script language consists of a number of opcodes which fall into
+The Decred script language consists of a number of opcodes which fall into
 several categories such pushing and popping data to and from the stack,
 performing basic and bitwise arithmetic, conditional branching, comparing
 hashes, and checking cryptographic signatures.  Scripts are processed from left
@@ -29,8 +29,11 @@ what conditions must be met in order to spend decreds.
 
 Errors
 
-Errors returned by this package are of the form txscript.ErrStackX where X
-indicates the specific error.  See Variables in the package documentation for a
-full list.
+Errors returned by this package are of type txscript.Error.  This allows the
+caller to programmatically determine the specific error by examining the
+ErrorCode field of the type asserted txscript.Error while still providing rich
+error messages with contextual information.  A convenience function named
+IsErrorCode is also provided to allow callers to easily check for a specific
+error code.  See ErrorCode in the package documentation for a full list.
 */
 package txscript

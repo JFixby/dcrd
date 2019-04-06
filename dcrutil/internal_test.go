@@ -15,6 +15,7 @@ package dcrutil
 import (
 	"github.com/decred/base58"
 	"github.com/decred/dcrd/chaincfg/chainec"
+	"github.com/decred/dcrd/dcrec/secp256k1"
 
 	"golang.org/x/crypto/ripemd160"
 )
@@ -58,7 +59,7 @@ func TstAddressScriptHash(hash [ripemd160.Size]byte,
 func TstAddressPubKey(serializedPubKey []byte, pubKeyFormat PubKeyFormat,
 	netID [2]byte) *AddressSecpPubKey {
 
-	pubKey, _ := chainec.Secp256k1.ParsePubKey(serializedPubKey)
+	pubKey, _ := secp256k1.ParsePubKey(serializedPubKey)
 	return &AddressSecpPubKey{
 		pubKeyFormat: pubKeyFormat,
 		pubKey:       chainec.PublicKey(pubKey),
@@ -67,7 +68,7 @@ func TstAddressPubKey(serializedPubKey []byte, pubKeyFormat PubKeyFormat,
 }
 
 // TstAddressSAddr returns the expected script address bytes for
-// P2PKH and P2SH decred addresses.
+// P2PKH and P2SH Decred addresses.
 func TstAddressSAddr(addr string) []byte {
 	decoded := base58.Decode(addr)
 	return decoded[2 : 2+ripemd160.Size]

@@ -1,5 +1,5 @@
-// Copyright (c) 2013-2016 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -7,29 +7,7 @@ package txscript
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
-
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/wire"
-)
-
-// SigHashType represents hash type bits at the end of a signature.
-type SigHashType byte
-
-// Hash type bits from the end of a signature.
-const (
-	SigHashOld          SigHashType = 0x0
-	SigHashAll          SigHashType = 0x1
-	SigHashNone         SigHashType = 0x2
-	SigHashSingle       SigHashType = 0x3
-	SigHashAllValue     SigHashType = 0x4
-	SigHashAnyOneCanPay SigHashType = 0x80
-
-	// sigHashMask defines the number of bits of the hash type which is used
-	// to identify which outputs are signed.
-	sigHashMask = 0x1f
 )
 
 // These are the constants specified for maximums in individual scripts.
@@ -87,10 +65,40 @@ func IsPushOnlyScript(script []byte) bool {
 	return isPushOnly(pops)
 }
 
+// isStakeOpcode returns whether or not the opcode is one of the stake tagging
+// opcodes.
+func isStakeOpcode(op *opcode) bool {
+	return op.value >= OP_SSTX && op.value <= OP_SSTXCHANGE
+}
+
+// isScriptHash returns whether or not the passed script is a regular
+// pay-to-script-hash script.
+func isScriptHash(pops []parsedOpcode) bool {
+	return len(pops) == 3 &&
+		pops[0].opcode.value == OP_HASH160 &&
+		pops[1].opcode.value == OP_DATA_20 &&
+		pops[2].opcode.value == OP_EQUAL
+}
+
+// isStakeScriptHash returns whether or not the passed script is a stake
+// pay-to-script-hash script.
+func isStakeScriptHash(pops []parsedOpcode) bool {
+	return len(pops) == 4 &&
+		isStakeOpcode(pops[0].opcode) &&
+		pops[1].opcode.value == OP_HASH160 &&
+		pops[2].opcode.value == OP_DATA_20 &&
+		pops[3].opcode.value == OP_EQUAL
+}
+
+// isAnyKindOfScriptHash returns whether or not the passed script is either a
+// regular pay-to-script-hash script or a stake pay-to-script-hash script.
+func isAnyKindOfScriptHash(pops []parsedOpcode) bool {
+	return isScriptHash(pops) || isStakeScriptHash(pops)
+}
+
 // HasP2SHScriptSigStakeOpCodes returns an error is the p2sh script has either
 // stake opcodes or if the pkscript cannot be retrieved.
-func HasP2SHScriptSigStakeOpCodes(version uint16, scriptSig,
-	scriptPubKey []byte) error {
+func HasP2SHScriptSigStakeOpCodes(version uint16, scriptSig, scriptPubKey []byte) error {
 	class := GetScriptClass(version, scriptPubKey)
 	if IsStakeOutput(scriptPubKey) {
 		class, _ = GetStakeOutSubclass(scriptPubKey)
@@ -101,11 +109,11 @@ func HasP2SHScriptSigStakeOpCodes(version uint16, scriptSig,
 		// any stake tagging OP codes.
 		pData, err := PushedData(scriptSig)
 		if err != nil {
-			return fmt.Errorf("error retrieving pushed data "+
-				"from script: %v", err)
+			return err
 		}
 		if len(pData) == 0 {
-			return fmt.Errorf("script has no pushed data")
+			str := "script has no pushed data"
+			return scriptError(ErrNotPushOnly, str)
 		}
 
 		// The pay-to-hash-script is the final data push of the
@@ -114,11 +122,11 @@ func HasP2SHScriptSigStakeOpCodes(version uint16, scriptSig,
 
 		hasStakeOpCodes, err := ContainsStakeOpCodes(shScript)
 		if err != nil {
-			return fmt.Errorf("unexpected error checking pkscript "+
-				"from p2sh transaction: %v", err.Error())
+			return err
 		}
 		if hasStakeOpCodes {
-			return ErrP2SHStakeOpCodes
+			str := "stake opcodes were found in a p2sh script"
+			return scriptError(ErrP2SHStakeOpCodes, str)
 		}
 	}
 
@@ -128,8 +136,7 @@ func HasP2SHScriptSigStakeOpCodes(version uint16, scriptSig,
 // parseScriptTemplate is the same as parseScript but allows the passing of the
 // template list for testing purposes.  When there are parse errors, it returns
 // the list of parsed opcodes up to the point of failure along with the error.
-func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode,
-	error) {
+func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode, error) {
 	retScript := make([]parsedOpcode, 0, len(script))
 	for i := 0; i < len(script); {
 		instr := script[i]
@@ -147,7 +154,11 @@ func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode,
 		// Data pushes of specific lengths -- OP_DATA_[1-75].
 		case op.length > 1:
 			if len(script[i:]) < op.length {
-				return retScript, ErrStackShortScript
+				str := fmt.Sprintf("opcode %s requires %d "+
+					"bytes, but script only has %d remaining",
+					op.name, op.length, len(script[i:]))
+				return retScript, scriptError(ErrMalformedPush,
+					str)
 			}
 
 			// Slice out the data.
@@ -160,7 +171,11 @@ func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode,
 			off := i + 1
 
 			if len(script[off:]) < -op.length {
-				return retScript, ErrStackShortScript
+				str := fmt.Sprintf("opcode %s requires %d "+
+					"bytes, but script only has %d remaining",
+					op.name, -op.length, len(script[off:]))
+				return retScript, scriptError(ErrMalformedPush,
+					str)
 			}
 
 			// Next -length bytes are little endian length of data.
@@ -176,9 +191,10 @@ func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode,
 					(uint(script[off+1]) << 8) |
 					uint(script[off]))
 			default:
-				return retScript,
-					fmt.Errorf("invalid opcode length %d",
-						op.length)
+				str := fmt.Sprintf("invalid opcode length %d",
+					op.length)
+				return retScript, scriptError(ErrMalformedPush,
+					str)
 			}
 
 			// Move offset to beginning of the data.
@@ -187,7 +203,11 @@ func parseScriptTemplate(script []byte, opcodes *[256]opcode) ([]parsedOpcode,
 			// Disallow entries that do not fit script or were
 			// sign extended.
 			if int(l) > len(script[off:]) || int(l) < 0 {
-				return retScript, ErrStackShortScript
+				str := fmt.Sprintf("opcode %s pushes %d bytes, "+
+					"but script only has %d remaining",
+					op.name, int(l), len(script[off:]))
+				return retScript, scriptError(ErrMalformedPush,
+					str)
 			}
 
 			pop.data = script[off : off+int(l)]
@@ -290,140 +310,6 @@ func removeOpcodeByData(pkscript []parsedOpcode, data []byte) []parsedOpcode {
 	}
 	return retScript
 
-}
-
-// CalcSignatureHash is an exported version for testing.
-func CalcSignatureHash(script []parsedOpcode, hashType SigHashType,
-	tx *wire.MsgTx, idx int, cachedPrefix *chainhash.Hash) ([]byte, error) {
-	return calcSignatureHash(script, hashType, tx, idx, cachedPrefix)
-}
-
-// calcSignatureHash will, given a script and hash type for the current script
-// engine instance, calculate the signature hash to be used for signing and
-// verification.
-func calcSignatureHash(script []parsedOpcode, hashType SigHashType,
-	tx *wire.MsgTx, idx int, cachedPrefix *chainhash.Hash) ([]byte, error) {
-	// The SigHashSingle signature type signs only the corresponding input
-	// and output (the output with the same index number as the input).
-	//
-	// Since transactions can have more inputs than outputs, this means it
-	// is improper to use SigHashSingle on input indices that don't have a
-	// corresponding output.
-	//
-	// A bug in the original Satoshi client implementation means specifying
-	// an index that is out of range results in a signature hash of 1 (as a
-	// uint256 little endian).  The original intent appeared to be to
-	// indicate failure, but unfortunately, it was never checked and thus is
-	// treated as the actual signature hash.  This buggy behavior is now
-	// part of the consensus and a hard fork would be required to fix it.
-	//
-	// Due to this, care must be taken by software that creates transactions
-	// which make use of SigHashSingle because it can lead to an extremely
-	// dangerous situation where the invalid inputs will end up signing a
-	// hash of 1.  This in turn presents an opportunity for attackers to
-	// cleverly construct transactions which can steal those coins provided
-	// they can reuse signatures.
-	//
-	// Decred mitigates this by actually returning an error instead.
-	if hashType&sigHashMask == SigHashSingle && idx >= len(tx.TxOut) {
-		return nil, ErrSighashSingleIdx
-	}
-
-	// Remove all instances of OP_CODESEPARATOR from the script.
-	script = removeOpcode(script, OP_CODESEPARATOR)
-
-	// Make a deep copy of the transaction, zeroing out the script for all
-	// inputs that are not currently being processed.
-	txCopy := tx.Copy()
-	for i := range txCopy.TxIn {
-		if i == idx {
-			// UnparseScript cannot fail here because removeOpcode
-			// above only returns a valid script.
-			sigScript, _ := unparseScript(script)
-			txCopy.TxIn[idx].SignatureScript = sigScript
-		} else {
-			txCopy.TxIn[i].SignatureScript = nil
-		}
-	}
-
-	switch hashType & sigHashMask {
-	case SigHashNone:
-		txCopy.TxOut = txCopy.TxOut[0:0] // Empty slice.
-		for i := range txCopy.TxIn {
-			if i != idx {
-				txCopy.TxIn[i].Sequence = 0
-			}
-		}
-
-	case SigHashSingle:
-		// Resize output array to up to and including requested index.
-		txCopy.TxOut = txCopy.TxOut[:idx+1]
-
-		// All but current output get zeroed out.
-		for i := 0; i < idx; i++ {
-			txCopy.TxOut[i].Value = -1
-			txCopy.TxOut[i].PkScript = nil
-		}
-
-		// Sequence on all other inputs is 0, too.
-		for i := range txCopy.TxIn {
-			if i != idx {
-				txCopy.TxIn[i].Sequence = 0
-			}
-		}
-
-	default:
-		// Consensus treats undefined hashtypes like normal SigHashAll
-		// for purposes of hash generation.
-		fallthrough
-	case SigHashOld:
-		fallthrough
-	case SigHashAllValue:
-		fallthrough
-	case SigHashAll:
-		// Nothing special here.
-	}
-	if hashType&SigHashAnyOneCanPay != 0 {
-		txCopy.TxIn = txCopy.TxIn[idx : idx+1]
-		idx = 0
-	}
-
-	// The final hash (message to sign) is the hash of:
-	// 1) the hash type (encoded as a 4-byte little-endian value)
-	// 2) hash of the prefix ||
-	// 3) hash of the witness for signing ||
-	var wbuf bytes.Buffer
-	wbuf.Grow(chainhash.HashSize*2 + 4)
-	binary.Write(&wbuf, binary.LittleEndian, uint32(hashType))
-
-	// Optimization for SIGHASH_ALL. In this case, the prefix hash is
-	// the same as the transaction hash because only the inputs have
-	// been modified, so don't bother to do the wasteful O(N^2) extra
-	// hash here.
-	// The caching only works if the "anyone can pay flag" is also
-	// disabled.
-	var prefixHash chainhash.Hash
-	if cachedPrefix != nil &&
-		(hashType&sigHashMask == SigHashAll) &&
-		(hashType&SigHashAnyOneCanPay == 0) &&
-		chaincfg.SigHashOptimization {
-		prefixHash = *cachedPrefix
-	} else {
-		prefixHash = txCopy.TxHash()
-	}
-
-	// If the ValueIn is to be included in what we're signing, sign
-	// the witness hash that includes it. Otherwise, just sign the
-	// prefix and signature scripts.
-	var witnessHash chainhash.Hash
-	if hashType&sigHashMask != SigHashAllValue {
-		witnessHash = txCopy.TxHashWitnessSigning()
-	} else {
-		witnessHash = txCopy.TxHashWitnessValueSigning()
-	}
-	wbuf.Write(prefixHash[:])
-	wbuf.Write(witnessHash[:])
-	return chainhash.HashB(wbuf.Bytes()), nil
 }
 
 // asSmallInt returns the passed opcode, which must be true according to

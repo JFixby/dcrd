@@ -16,7 +16,8 @@ import (
 	"time"
 
 	"github.com/decred/dcrd/blockchain/indexers"
-	"github.com/decred/dcrd/limits"
+	"github.com/decred/dcrd/internal/limits"
+	"github.com/decred/dcrd/internal/version"
 )
 
 var cfg *config
@@ -47,11 +48,12 @@ func dcrdMain(serverChan chan<- *server) error {
 	// Get a channel that will be closed when a shutdown signal has been
 	// triggered either from an OS signal such as SIGINT (Ctrl+C) or from
 	// another subsystem such as the RPC server.
-	interruptedChan := interruptListener()
+	interrupt := interruptListener()
 	defer dcrdLog.Info("Shutdown complete")
 
 	// Show version and home dir at startup.
-	dcrdLog.Infof("Version %s (Go version %s)", version(), runtime.Version())
+	dcrdLog.Infof("Version %s (Go version %s %s/%s)", version.String(),
+		runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	dcrdLog.Infof("Home dir: %s", cfg.HomeDir)
 	if cfg.NoFileLogging {
 		dcrdLog.Info("File logging disabled")
@@ -89,7 +91,7 @@ func dcrdMain(serverChan chan<- *server) error {
 	if cfg.MemProfile != "" {
 		f, err := os.Create(cfg.MemProfile)
 		if err != nil {
-			dcrdLog.Errorf("Unable to create cpu profile: %v", err)
+			dcrdLog.Errorf("Unable to create mem profile: %v", err)
 			return err
 		}
 		timer := time.NewTimer(time.Minute * 20) // 20 minutes
@@ -115,7 +117,7 @@ func dcrdMain(serverChan chan<- *server) error {
 	}
 
 	// Return now if an interrupt signal was triggered.
-	if interruptRequested(interruptedChan) {
+	if interruptRequested(interrupt) {
 		return nil
 	}
 
@@ -134,7 +136,7 @@ func dcrdMain(serverChan chan<- *server) error {
 	}()
 
 	// Return now if an interrupt signal was triggered.
-	if interruptRequested(interruptedChan) {
+	if interruptRequested(interrupt) {
 		return nil
 	}
 
@@ -143,7 +145,7 @@ func dcrdMain(serverChan chan<- *server) error {
 	// NOTE: The order is important here because dropping the tx index also
 	// drops the address index since it relies on it.
 	if cfg.DropAddrIndex {
-		if err := indexers.DropAddrIndex(db); err != nil {
+		if err := indexers.DropAddrIndex(db, interrupt); err != nil {
 			dcrdLog.Errorf("%v", err)
 			return err
 		}
@@ -151,7 +153,7 @@ func dcrdMain(serverChan chan<- *server) error {
 		return nil
 	}
 	if cfg.DropTxIndex {
-		if err := indexers.DropTxIndex(db); err != nil {
+		if err := indexers.DropTxIndex(db, interrupt); err != nil {
 			dcrdLog.Errorf("%v", err)
 			return err
 		}
@@ -159,7 +161,15 @@ func dcrdMain(serverChan chan<- *server) error {
 		return nil
 	}
 	if cfg.DropExistsAddrIndex {
-		if err := indexers.DropExistsAddrIndex(db); err != nil {
+		if err := indexers.DropExistsAddrIndex(db, interrupt); err != nil {
+			dcrdLog.Errorf("%v", err)
+			return err
+		}
+
+		return nil
+	}
+	if cfg.DropCFIndex {
+		if err := indexers.DropCfIndex(db, interrupt); err != nil {
 			dcrdLog.Errorf("%v", err)
 			return err
 		}
@@ -169,7 +179,8 @@ func dcrdMain(serverChan chan<- *server) error {
 
 	// Create server and start it.
 	lifetimeNotifier.notifyStartupEvent(lifetimeEventP2PServer)
-	server, err := newServer(cfg.Listeners, db, activeNetParams.Params)
+	server, err := newServer(cfg.Listeners, db, activeNetParams.Params,
+		cfg.DataDir, interrupt)
 	if err != nil {
 		// TODO(oga) this logging could do with some beautifying.
 		dcrdLog.Errorf("Unable to start server on %v: %v",
@@ -189,7 +200,7 @@ func dcrdMain(serverChan chan<- *server) error {
 		serverChan <- server
 	}
 
-	if interruptRequested(interruptedChan) {
+	if interruptRequested(interrupt) {
 		return nil
 	}
 
@@ -198,7 +209,7 @@ func dcrdMain(serverChan chan<- *server) error {
 	// Wait until the interrupt signal is received from an OS signal or
 	// shutdown is requested through one of the subsystems such as the RPC
 	// server.
-	<-interruptedChan
+	<-interrupt
 	return nil
 }
 

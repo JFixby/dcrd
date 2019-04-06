@@ -1,3 +1,8 @@
+// Copyright (c) 2013-2015 The btcsuite developers
+// Copyright (c) 2015-2019 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -10,7 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/decred/dcrd/dcrjson/v2"
 )
 
 const (
@@ -128,7 +133,7 @@ func main() {
 
 	// Marshal the command into a JSON-RPC byte slice in preparation for
 	// sending it to the RPC server.
-	marshalledJSON, err := dcrjson.MarshalCmd(1, cmd)
+	marshalledJSON, err := dcrjson.MarshalCmd("1.0", 1, cmd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

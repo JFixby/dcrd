@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Decred developers
+// Copyright (c) 2017-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/decred/dcrd/blockchain/stake"
 	"github.com/decred/dcrd/chaincfg"
 )
 
@@ -95,8 +96,10 @@ var (
 	}
 )
 
+// defaultParams returns net parameters modified to have a single known
+// deployment that is used throughout the various votebit tests.
 func defaultParams(vote chaincfg.Vote) chaincfg.Params {
-	params := chaincfg.SimNetParams
+	params := chaincfg.RegNetParams
 	params.Deployments = make(map[uint32][]chaincfg.ConsensusDeployment)
 	params.Deployments[posVersion] = []chaincfg.ConsensusDeployment{{
 		Vote: vote,
@@ -109,70 +112,25 @@ func defaultParams(vote chaincfg.Vote) chaincfg.Params {
 	return params
 }
 
-func TestSerializeDeserialize(t *testing.T) {
-	params := defaultParams(pedro)
-	ourDeployment := &params.Deployments[posVersion][0]
-	blob := serializeDeploymentCacheParams(ourDeployment)
-
-	deserialized, err := deserializeDeploymentCacheParams(blob)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	if deserialized.Vote.Mask != pedro.Mask {
-		t.Fatalf("invalid Mask")
-	}
-	if deserialized.StartTime != ourDeployment.StartTime {
-		t.Fatalf("invalid StartTime")
-	}
-	if deserialized.ExpireTime != ourDeployment.ExpireTime {
-		t.Fatalf("invalid ExpireTime")
-	}
-	if len(deserialized.Vote.Choices) != len(ourDeployment.Vote.Choices) {
-		t.Fatalf("invalid len deserialized.Vote.Choices got "+
-			"%v expected %v", len(deserialized.Vote.Choices),
-			len(ourDeployment.Vote.Choices))
-	}
-	for i := 0; i < len(deserialized.Vote.Choices); i++ {
-		if deserialized.Vote.Choices[i].Bits !=
-			ourDeployment.Vote.Choices[i].Bits {
-			t.Fatalf("invalid Bits %v got %v expected %v", i,
-				deserialized.Vote.Choices[i].Bits,
-				ourDeployment.Vote.Choices[i].Bits)
-		}
-		if deserialized.Vote.Choices[i].IsAbstain !=
-			ourDeployment.Vote.Choices[i].IsAbstain {
-			t.Fatalf("invalid IsAbstain %v got %v expected %v", i,
-				deserialized.Vote.Choices[i].IsAbstain,
-				ourDeployment.Vote.Choices[i].IsAbstain)
-		}
-		if deserialized.Vote.Choices[i].IsNo !=
-			ourDeployment.Vote.Choices[i].IsNo {
-			t.Fatalf("invalid IsNo %v got %v expected %v", i,
-				deserialized.Vote.Choices[i].IsNo,
-				ourDeployment.Vote.Choices[i].IsNo)
-		}
-	}
-}
-
 // TestNoQuorum ensures that the quorum behavior works as expected with no
 // votes.
 func TestNoQuorum(t *testing.T) {
 	params := defaultParams(pedro)
 	bc := newFakeChain(&params)
-	node := bc.bestNode
-	node.header.StakeVersion = posVersion
+	node := bc.bestChain.Tip()
+	node.stakeVersion = posVersion
 
 	// get to svi
 	curTimestamp := time.Now()
 	for i := uint32(0); i < uint32(params.StakeValidationHeight); i++ {
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
-	ts, err := bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err := bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(SVI): %v", err)
+		t.Fatalf("NextThresholdState(SVI): %v", err)
 	}
 	tse := ThresholdStateTuple{
 		State:  ThresholdDefined,
@@ -183,18 +141,18 @@ func TestNoQuorum(t *testing.T) {
 	}
 
 	// get to started
-	for i := uint32(0); i < uint32(params.RuleChangeActivationInterval-1); i++ {
+	for i := uint32(0); i < params.RuleChangeActivationInterval-1; i++ {
 		// Set stake versions and vote bits.
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 		appendFakeVotes(node, params.TicketsPerBlock, posVersion, 0x01)
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
 
-	ts, err = bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err = bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(started): %v", err)
+		t.Fatalf("NextThresholdState(started): %v", err)
 	}
 	tse = ThresholdStateTuple{
 		State:  ThresholdStarted,
@@ -206,7 +164,7 @@ func TestNoQuorum(t *testing.T) {
 
 	// get to quorum - 1
 	voteCount := uint32(0)
-	for i := uint32(0); i < uint32(params.RuleChangeActivationInterval); i++ {
+	for i := uint32(0); i < params.RuleChangeActivationInterval; i++ {
 		// Set stake versions and vote bits.
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 		for x := 0; x < int(params.TicketsPerBlock); x++ {
@@ -218,14 +176,14 @@ func TestNoQuorum(t *testing.T) {
 			voteCount++
 		}
 
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
 
-	ts, err = bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err = bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(quorum-1): %v", err)
+		t.Fatalf("NextThresholdState(quorum-1): %v", err)
 	}
 	tse = ThresholdStateTuple{
 		State:  ThresholdStarted,
@@ -237,7 +195,7 @@ func TestNoQuorum(t *testing.T) {
 
 	// get to exact quorum but with 75%%-1 yes votes
 	voteCount = uint32(0)
-	for i := uint32(0); i < uint32(params.RuleChangeActivationInterval); i++ {
+	for i := uint32(0); i < params.RuleChangeActivationInterval; i++ {
 		// Set stake versions and vote bits.
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 		for x := 0; x < int(params.TicketsPerBlock); x++ {
@@ -255,14 +213,14 @@ func TestNoQuorum(t *testing.T) {
 			voteCount++
 		}
 
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
 
-	ts, err = bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err = bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(quorum 75%%-1): %v", err)
+		t.Fatalf("NextThresholdState(quorum 75%%-1): %v", err)
 	}
 	tse = ThresholdStateTuple{
 		State:  ThresholdStarted,
@@ -274,7 +232,7 @@ func TestNoQuorum(t *testing.T) {
 
 	// get to exact quorum with exactly 75% of votes
 	voteCount = uint32(0)
-	for i := uint32(0); i < uint32(params.RuleChangeActivationInterval); i++ {
+	for i := uint32(0); i < params.RuleChangeActivationInterval; i++ {
 		// Set stake versions and vote bits.
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 		for x := 0; x < int(params.TicketsPerBlock); x++ {
@@ -292,14 +250,14 @@ func TestNoQuorum(t *testing.T) {
 			voteCount++
 		}
 
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
 
-	ts, err = bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err = bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(quorum 75%%): %v", err)
+		t.Fatalf("NextThresholdState(quorum 75%%): %v", err)
 	}
 	tse = ThresholdStateTuple{
 		State:  ThresholdFailed,
@@ -315,21 +273,21 @@ func TestNoQuorum(t *testing.T) {
 func TestYesQuorum(t *testing.T) {
 	params := defaultParams(pedro)
 	bc := newFakeChain(&params)
-	node := bc.bestNode
-	node.header.StakeVersion = posVersion
+	node := bc.bestChain.Tip()
+	node.stakeVersion = posVersion
 
 	// get to svi
 	curTimestamp := time.Now()
 	for i := uint32(0); i < uint32(params.StakeValidationHeight); i++ {
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
-	ts, err := bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err := bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(SVI): %v", err)
+		t.Fatalf("NextThresholdState(SVI): %v", err)
 	}
 	tse := ThresholdStateTuple{
 		State:  ThresholdDefined,
@@ -340,18 +298,18 @@ func TestYesQuorum(t *testing.T) {
 	}
 
 	// get to started
-	for i := uint32(0); i < uint32(params.RuleChangeActivationInterval-1); i++ {
+	for i := uint32(0); i < params.RuleChangeActivationInterval-1; i++ {
 		// Set stake versions and vote bits.
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 		appendFakeVotes(node, params.TicketsPerBlock, posVersion, 0x01)
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
 
-	ts, err = bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err = bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(started): %v", err)
+		t.Fatalf("NextThresholdState(started): %v", err)
 	}
 	tse = ThresholdStateTuple{
 		State:  ThresholdStarted,
@@ -363,7 +321,7 @@ func TestYesQuorum(t *testing.T) {
 
 	// get to quorum - 1
 	voteCount := uint32(0)
-	for i := uint32(0); i < uint32(params.RuleChangeActivationInterval); i++ {
+	for i := uint32(0); i < params.RuleChangeActivationInterval; i++ {
 		// Set stake versions and vote bits.
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 		for x := 0; x < int(params.TicketsPerBlock); x++ {
@@ -375,14 +333,14 @@ func TestYesQuorum(t *testing.T) {
 			voteCount++
 		}
 
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
 
-	ts, err = bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err = bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(quorum-1): %v", err)
+		t.Fatalf("NextThresholdState(quorum-1): %v", err)
 	}
 	tse = ThresholdStateTuple{
 		State:  ThresholdStarted,
@@ -394,7 +352,7 @@ func TestYesQuorum(t *testing.T) {
 
 	// get to exact quorum but with 75%-1 yes votes
 	voteCount = uint32(0)
-	for i := uint32(0); i < uint32(params.RuleChangeActivationInterval); i++ {
+	for i := uint32(0); i < params.RuleChangeActivationInterval; i++ {
 		// Set stake versions and vote bits.
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 		for x := 0; x < int(params.TicketsPerBlock); x++ {
@@ -412,14 +370,14 @@ func TestYesQuorum(t *testing.T) {
 			voteCount++
 		}
 
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
 
-	ts, err = bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err = bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(quorum 75%%-1): %v", err)
+		t.Fatalf("NextThresholdState(quorum 75%%-1): %v", err)
 	}
 	tse = ThresholdStateTuple{
 		State:  ThresholdStarted,
@@ -431,8 +389,7 @@ func TestYesQuorum(t *testing.T) {
 
 	// get to exact quorum with exactly 75% of votes
 	voteCount = uint32(0)
-	for i := uint32(0); i < uint32(params.RuleChangeActivationInterval); i++ {
-		// TODO(davec): Comment
+	for i := uint32(0); i < params.RuleChangeActivationInterval; i++ {
 		// Set stake versions and vote bits.
 		node = newFakeNode(node, powVersion, posVersion, 0, curTimestamp)
 		for x := 0; x < int(params.TicketsPerBlock); x++ {
@@ -450,14 +407,14 @@ func TestYesQuorum(t *testing.T) {
 			voteCount++
 		}
 
-		bc.bestNode = node
-		bc.index[node.hash] = node
+		bc.bestChain.SetTip(node)
+		bc.index.AddNode(node)
 		curTimestamp = curTimestamp.Add(time.Second)
 	}
 
-	ts, err = bc.ThresholdState(&node.hash, posVersion, pedro.Id)
+	ts, err = bc.NextThresholdState(&node.hash, posVersion, pedro.Id)
 	if err != nil {
-		t.Fatalf("ThresholdState(quorum 75%%): %v", err)
+		t.Fatalf("NextThresholdState(quorum 75%%): %v", err)
 	}
 	tse = ThresholdStateTuple{
 		State:  ThresholdLockedIn,
@@ -477,7 +434,7 @@ func TestVoting(t *testing.T) {
 	svi := uint32(params.StakeVersionInterval)
 
 	type voteCount struct {
-		vote  VoteVersionTuple
+		vote  stake.VoteVersionTuple
 		count uint32
 	}
 
@@ -496,7 +453,7 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -513,25 +470,25 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion - 1,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svi - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - svi,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
@@ -557,25 +514,25 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion - 1,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion - 1,
 					Bits:    0x01,
 				},
 				count: svh + 2*svi - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci % svi,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03},
 				count: rci,
@@ -600,25 +557,25 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion + 1,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
@@ -644,19 +601,19 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion - 1,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
@@ -679,25 +636,25 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion + 1,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
@@ -723,43 +680,43 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion + 1,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion + 1,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion + 1,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion + 1,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion + 1,
 					Bits:    0x01,
 				},
@@ -794,31 +751,31 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -847,31 +804,31 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x05,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x05,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -900,37 +857,37 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x06,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x06,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -962,31 +919,31 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -1019,19 +976,19 @@ func TestVoting(t *testing.T) {
 					time.Duration(int64(svh)+int64(rci+rci/2))).Unix())
 			},
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion - 1,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion - 1,
 					Bits:    0x05,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion - 1,
 					Bits:    0x05,
 				},
@@ -1058,19 +1015,19 @@ func TestVoting(t *testing.T) {
 					time.Duration(int64(svh)+int64(rci+rci/2))).Unix())
 			},
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x05,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x05,
 				},
@@ -1093,41 +1050,41 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion - 1,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion - 1,
 					Bits:    0x01,
 				},
 				count: svh + 19*svi - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svi - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
-				count: uint32(rci) - 1,
+				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x03,
 				},
 				count: 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
-				count: uint32(rci),
+				count: rci,
 			}},
 			expectedState: []ThresholdStateTuple{{
 				State:  ThresholdDefined,
@@ -1155,19 +1112,19 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -1190,19 +1147,19 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x21,
 				},
@@ -1225,31 +1182,31 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x11,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x11,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -1278,31 +1235,31 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x31,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x31,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -1331,31 +1288,31 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x41,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x41,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -1384,31 +1341,31 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x51,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x51,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -1437,31 +1394,31 @@ func TestVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: svh,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: rci - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x61,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x61,
 				},
 				count: rci,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -1491,8 +1448,8 @@ func TestVoting(t *testing.T) {
 		params = defaultParams(test.vote)
 		// We have to reset the cache for every test.
 		bc := newFakeChain(&params)
-		node := bc.bestNode
-		node.header.StakeVersion = test.startStakeVersion
+		node := bc.bestChain.Tip()
+		node.stakeVersion = test.startStakeVersion
 
 		t.Logf("running: %v", test.name)
 
@@ -1519,19 +1476,18 @@ func TestVoting(t *testing.T) {
 				appendFakeVotes(node, params.TicketsPerBlock,
 					vote.Version, vote.Bits)
 
-				bc.bestNode = node
-				bc.index[node.hash] = node
+				bc.bestChain.SetTip(node)
+				bc.index.AddNode(node)
 				curTimestamp = curTimestamp.Add(time.Second)
 			}
 			t.Logf("Height %v, Start time %v, curTime %v, delta %v",
 				node.height, params.Deployments[4][0].StartTime,
-				node.header.Timestamp.Unix(),
-				node.header.Timestamp.Unix()-
+				node.timestamp, node.timestamp-
 					int64(params.Deployments[4][0].StartTime))
-			ts, err := bc.ThresholdState(&node.hash, posVersion,
+			ts, err := bc.NextThresholdState(&node.hash, posVersion,
 				test.vote.Id)
 			if err != nil {
-				t.Fatalf("ThresholdState(%v): %v", k, err)
+				t.Fatalf("NextThresholdState(%v): %v", k, err)
 			}
 			if ts != test.expectedState[k] {
 				t.Fatalf("%v.%v (%v) got state %+v wanted "+
@@ -1542,71 +1498,10 @@ func TestVoting(t *testing.T) {
 	}
 }
 
-// Parallel test.
-const (
-	testDummy1ID    = "testdummy1"
-	vbTestDummy1Yes = 0x04
-
-	testDummy2ID   = "testdummy2"
-	vbTestDummy2No = 0x08
-)
-
-var (
-	// testDummy1 is a voting agenda used throughout these tests.
-	testDummy1 = chaincfg.Vote{
-		Id:          testDummy1ID,
-		Description: "",
-		Mask:        0x6, // 0b0110
-		Choices: []chaincfg.Choice{{
-			Id:          "abstain",
-			Description: "abstain voting for change",
-			Bits:        0x0000,
-			IsAbstain:   true,
-			IsNo:        false,
-		}, {
-			Id:          "no",
-			Description: "vote no",
-			Bits:        0x0002, // Bit 1
-			IsAbstain:   false,
-			IsNo:        true,
-		}, {
-			Id:          "yes",
-			Description: "vote yes",
-			Bits:        0x0004, // Bit 2
-			IsAbstain:   false,
-			IsNo:        false,
-		}},
-	}
-
-	// testDummy2 is a voting agenda used throughout these tests.
-	testDummy2 = chaincfg.Vote{
-		Id:          testDummy2ID,
-		Description: "",
-		Mask:        0x18, // 0b11000
-		Choices: []chaincfg.Choice{{
-			Id:          "abstain",
-			Description: "abstain voting for change",
-			Bits:        0x0000,
-			IsAbstain:   true,
-			IsNo:        false,
-		}, {
-			Id:          "no",
-			Description: "vote no",
-			Bits:        0x0008, // Bit 3
-			IsAbstain:   false,
-			IsNo:        true,
-		}, {
-			Id:          "yes",
-			Description: "vote yes",
-			Bits:        0x0010, // Bit 4
-			IsAbstain:   false,
-			IsNo:        false,
-		}},
-	}
-)
-
+// defaultParallelParams returns net parameters modified to have two known
+// deployments that are used throughout the parallel votebit tests.
 func defaultParallelParams() chaincfg.Params {
-	params := chaincfg.SimNetParams
+	params := chaincfg.RegNetParams
 	params.Deployments = make(map[uint32][]chaincfg.ConsensusDeployment)
 	params.Deployments[posVersion] = []chaincfg.ConsensusDeployment{
 		{
@@ -1632,7 +1527,7 @@ func TestParallelVoting(t *testing.T) {
 	params := defaultParallelParams()
 
 	type voteCount struct {
-		vote  VoteVersionTuple
+		vote  stake.VoteVersionTuple
 		count uint32
 	}
 
@@ -1650,37 +1545,37 @@ func TestParallelVoting(t *testing.T) {
 			blockVersion:      powVersion,
 			startStakeVersion: posVersion,
 			voteBitsCounts: []voteCount{{
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: uint32(params.StakeValidationHeight),
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: params.RuleChangeActivationInterval - 1,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion - 1,
 					Bits:    vbTestDummy1Yes | vbTestDummy2No,
 				},
 				count: params.RuleChangeActivationInterval,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    vbTestDummy1Yes | vbTestDummy2No,
 				},
 				count: params.RuleChangeActivationInterval,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
 				count: params.RuleChangeActivationInterval,
 			}, {
-				vote: VoteVersionTuple{
+				vote: stake.VoteVersionTuple{
 					Version: posVersion,
 					Bits:    0x01,
 				},
@@ -1736,8 +1631,8 @@ func TestParallelVoting(t *testing.T) {
 		params = defaultParallelParams()
 		// We have to reset the cache for every test.
 		bc := newFakeChain(&params)
-		node := bc.bestNode
-		node.header.StakeVersion = test.startStakeVersion
+		node := bc.bestChain.Tip()
+		node.stakeVersion = test.startStakeVersion
 
 		curTimestamp := time.Now()
 		for k := range test.expectedState[0] {
@@ -1749,15 +1644,15 @@ func TestParallelVoting(t *testing.T) {
 				appendFakeVotes(node, params.TicketsPerBlock,
 					vote.Version, vote.Bits)
 
-				bc.bestNode = node
-				bc.index[node.hash] = node
+				bc.bestChain.SetTip(node)
+				bc.index.AddNode(node)
 				curTimestamp = curTimestamp.Add(time.Second)
 			}
 			for i := range test.vote {
-				ts, err := bc.ThresholdState(&node.hash,
+				ts, err := bc.NextThresholdState(&node.hash,
 					posVersion, test.vote[i].Id)
 				if err != nil {
-					t.Fatalf("ThresholdState(%v): %v", k, err)
+					t.Fatalf("NextThresholdState(%v): %v", k, err)
 				}
 
 				if ts != test.expectedState[i][k] {

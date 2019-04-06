@@ -30,8 +30,6 @@ func zeroArray(a *[scalarSize]byte) {
 	for i := 0; i < scalarSize; i++ {
 		a[i] = 0x00
 	}
-
-	return
 }
 
 // zeroSlice zeroes the memory of a scalar byte slice.
@@ -39,8 +37,6 @@ func zeroSlice(s []byte) {
 	for i := 0; i < scalarSize; i++ {
 		s[i] = 0x00
 	}
-
-	return
 }
 
 // schnorrSign signs a Schnorr signature using a specified hash function
@@ -56,9 +52,10 @@ func zeroSlice(s []byte) {
 // attacks.
 // This is identical to the Schnorr signature function found in libsecp256k1:
 // https://github.com/bitcoin/secp256k1/tree/master/src/modules/schnorr
-func schnorrSign(curve *secp256k1.KoblitzCurve, msg []byte, ps []byte, k []byte,
+func schnorrSign(msg []byte, ps []byte, k []byte,
 	pubNonceX *big.Int, pubNonceY *big.Int,
 	hashFunc func([]byte) []byte) (*Signature, error) {
+	curve := secp256k1.S256()
 	if len(msg) != scalarSize {
 		str := fmt.Sprintf("wrong size for message (got %v, want %v)",
 			len(msg), scalarSize)
@@ -152,7 +149,7 @@ func schnorrSign(curve *secp256k1.KoblitzCurve, msg []byte, ps []byte, k []byte,
 
 // Sign is the exported version of sign. It uses RFC6979 and Blake256 to
 // produce a Schnorr signature.
-func Sign(curve *secp256k1.KoblitzCurve, priv *secp256k1.PrivateKey,
+func Sign(priv *secp256k1.PrivateKey,
 	hash []byte) (r, s *big.Int, err error) {
 	// Convert the private scalar to a 32 byte big endian number.
 	pA := BigIntToEncodedBytes(priv.GetD())
@@ -163,7 +160,7 @@ func Sign(curve *secp256k1.KoblitzCurve, priv *secp256k1.PrivateKey,
 	kB := nonceRFC6979(priv.Serialize(), hash, nil, nil)
 
 	for {
-		sig, err := schnorrSign(curve, hash, pA[:], kB, nil, nil,
+		sig, err := schnorrSign(hash, pA[:], kB, nil, nil,
 			chainhash.HashB)
 		if err == nil {
 			r = sig.GetR()
@@ -195,9 +192,10 @@ func Sign(curve *secp256k1.KoblitzCurve, priv *secp256k1.PrivateKey,
 // of r.
 // This is identical to the Schnorr verification function found in libsecp256k1:
 // https://github.com/bitcoin/secp256k1/tree/master/src/modules/schnorr
-func schnorrVerify(curve *secp256k1.KoblitzCurve, sig []byte,
+func schnorrVerify(sig []byte,
 	pubkey *secp256k1.PublicKey, msg []byte, hashFunc func([]byte) []byte) (bool,
 	error) {
+	curve := secp256k1.S256()
 	if len(msg) != scalarSize {
 		str := fmt.Sprintf("wrong size for message (got %v, want %v)",
 			len(msg), scalarSize)
@@ -221,7 +219,7 @@ func schnorrVerify(curve *secp256k1.KoblitzCurve, sig []byte,
 
 	sigR := sig[:32]
 	sigS := sig[32:]
-	sigRCopy := make([]byte, scalarSize, scalarSize)
+	sigRCopy := make([]byte, scalarSize)
 	copy(sigRCopy, sigR)
 	toHash := append(sigRCopy, msg...)
 	h := hashFunc(toHash)
@@ -280,10 +278,10 @@ func schnorrVerify(curve *secp256k1.KoblitzCurve, sig []byte,
 
 // Verify is the generalized and exported function for the verification of a
 // secp256k1 Schnorr signature. BLAKE256 is used as the hashing function.
-func Verify(curve *secp256k1.KoblitzCurve, pubkey *secp256k1.PublicKey,
+func Verify(pubkey *secp256k1.PublicKey,
 	msg []byte, r *big.Int, s *big.Int) bool {
 	sig := NewSignature(r, s)
-	ok, _ := schnorrVerify(curve, sig.Serialize(), pubkey, msg,
+	ok, _ := schnorrVerify(sig.Serialize(), pubkey, msg,
 		chainhash.HashB)
 
 	return ok
@@ -292,8 +290,9 @@ func Verify(curve *secp256k1.KoblitzCurve, pubkey *secp256k1.PublicKey,
 // schnorrRecover recovers a public key using a signature, hash function,
 // and message. It also attempts to verify the signature against the
 // regenerated public key.
-func schnorrRecover(curve *secp256k1.KoblitzCurve, sig, msg []byte,
+func schnorrRecover(sig, msg []byte,
 	hashFunc func([]byte) []byte) (*secp256k1.PublicKey, bool, error) {
+	curve := secp256k1.S256()
 	if len(msg) != scalarSize {
 		str := fmt.Sprintf("wrong size for message (got %v, want %v)",
 			len(msg), scalarSize)
@@ -308,7 +307,7 @@ func schnorrRecover(curve *secp256k1.KoblitzCurve, sig, msg []byte,
 
 	sigR := sig[:32]
 	sigS := sig[32:]
-	sigRCopy := make([]byte, scalarSize, scalarSize)
+	sigRCopy := make([]byte, scalarSize)
 	copy(sigRCopy, sigR)
 	toHash := append(sigRCopy, msg...)
 	h := hashFunc(toHash)
@@ -343,10 +342,10 @@ func schnorrRecover(curve *secp256k1.KoblitzCurve, sig, msg []byte,
 
 	// Decompress the Y value. We know that the first bit must
 	// be even. Use the PublicKey struct to make it easier.
-	compressedPoint := make([]byte, PubKeyBytesLen, PubKeyBytesLen)
+	compressedPoint := make([]byte, PubKeyBytesLen)
 	compressedPoint[0] = pubkeyCompressed
 	copy(compressedPoint[1:], sigR)
-	rPoint, err := secp256k1.ParsePubKey(compressedPoint, curve)
+	rPoint, err := secp256k1.ParsePubKey(compressedPoint)
 	if err != nil {
 		str := fmt.Sprintf("bad r point")
 		return nil, false, schnorrError(ErrRegenerateRPoint, str)
@@ -374,7 +373,7 @@ func schnorrRecover(curve *secp256k1.KoblitzCurve, sig, msg []byte,
 		str := fmt.Sprintf("pubkey not on curve")
 		return nil, false, schnorrError(ErrPubKeyOffCurve, str)
 	}
-	pubkey := secp256k1.NewPublicKey(curve, pkx, pky)
+	pubkey := secp256k1.NewPublicKey(pkx, pky)
 
 	// Verify this signature. Slow, lots of double checks, could be more
 	// cheaply implemented as
@@ -386,7 +385,7 @@ func schnorrRecover(curve *secp256k1.KoblitzCurve, sig, msg []byte,
 	// some known one anyway. In the case of these Schnorr signatures,
 	// relatively high numbers of corrupted signatures (50-70%)
 	// seem to produce valid pubkeys and valid signatures.
-	_, err = schnorrVerify(curve, sig, pubkey, msg, hashFunc)
+	_, err = schnorrVerify(sig, pubkey, msg, hashFunc)
 	if err != nil {
 		str := fmt.Sprintf("pubkey/sig pair could not be validated")
 		return nil, false, schnorrError(ErrRegenSig, str)
@@ -398,8 +397,8 @@ func schnorrRecover(curve *secp256k1.KoblitzCurve, sig, msg []byte,
 // RecoverPubkey is the exported and generalized version of schnorrRecover.
 // It recovers a public key given a signature and a message, using BLAKE256
 // as the hashing function.
-func RecoverPubkey(curve *secp256k1.KoblitzCurve, sig,
+func RecoverPubkey(sig,
 	msg []byte) (*secp256k1.PublicKey, bool, error) {
 
-	return schnorrRecover(curve, sig, msg, chainhash.HashB)
+	return schnorrRecover(sig, msg, chainhash.HashB)
 }

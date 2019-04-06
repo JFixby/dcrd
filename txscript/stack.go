@@ -1,11 +1,14 @@
-// Copyright (c) 2013-2015 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2013-2017 The btcsuite developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
 package txscript
 
-import "encoding/hex"
+import (
+	"encoding/hex"
+	"fmt"
+)
 
 // asBool gets the boolean value of the byte array.
 func asBool(t []byte) bool {
@@ -34,8 +37,7 @@ func fromBool(v bool) []byte {
 // changed it *must* be deep-copied first to avoid changing other values on the
 // stack.
 type stack struct {
-	stk               [][]byte
-	verifyMinimalData bool
+	stk [][]byte
 }
 
 // Depth returns the number of items on the stack.
@@ -78,13 +80,13 @@ func (s *stack) PopByteArray() ([]byte, error) {
 // consensus rules imposed on data interpreted as numbers.
 //
 // Stack transformation: [... x1 x2 x3] -> [... x1 x2]
-func (s *stack) PopInt(maxLen int) (scriptNum, error) {
+func (s *stack) PopInt(maxScriptNumLen int) (scriptNum, error) {
 	so, err := s.PopByteArray()
 	if err != nil {
 		return 0, err
 	}
 
-	return makeScriptNum(so, s.verifyMinimalData, maxLen)
+	return makeScriptNum(so, maxScriptNumLen)
 }
 
 // PopBool pops the value off the top of the stack, converts it into a bool, and
@@ -104,7 +106,9 @@ func (s *stack) PopBool() (bool, error) {
 func (s *stack) PeekByteArray(idx int32) ([]byte, error) {
 	sz := int32(len(s.stk))
 	if idx < 0 || idx >= sz {
-		return nil, ErrStackUnderflow
+		str := fmt.Sprintf("index %d is invalid for stack size %d", idx,
+			sz)
+		return nil, scriptError(ErrInvalidStackOperation, str)
 	}
 
 	return s.stk[sz-idx-1], nil
@@ -113,13 +117,13 @@ func (s *stack) PeekByteArray(idx int32) ([]byte, error) {
 // PeekInt returns the Nth item on the stack as a script num without removing
 // it.  The act of converting to a script num enforces the consensus rules
 // imposed on data interpreted as numbers.
-func (s *stack) PeekInt(idx int32) (scriptNum, error) {
+func (s *stack) PeekInt(idx int32, maxScriptNumLen int) (scriptNum, error) {
 	so, err := s.PeekByteArray(idx)
 	if err != nil {
 		return 0, err
 	}
 
-	return makeScriptNum(so, s.verifyMinimalData, mathOpCodeMaxScriptNumLen)
+	return makeScriptNum(so, maxScriptNumLen)
 }
 
 // PeekBool returns the Nth item on the stack as a bool without removing it.
@@ -142,17 +146,20 @@ func (s *stack) PeekBool(idx int32) (bool, error) {
 func (s *stack) nipN(idx int32) ([]byte, error) {
 	sz := int32(len(s.stk))
 	if idx < 0 || idx > sz-1 {
-		return nil, ErrStackUnderflow
+		str := fmt.Sprintf("index %d is invalid for stack size %d", idx,
+			sz)
+		return nil, scriptError(ErrInvalidStackOperation, str)
 	}
 
 	so := s.stk[sz-idx-1]
-	if idx == 0 {
+	switch {
+	case idx == 0:
 		s.stk = s.stk[:sz-1]
-	} else if idx == sz-1 {
-		s1 := make([][]byte, sz-1, sz-1)
+	case idx == sz-1:
+		s1 := make([][]byte, sz-1)
 		copy(s1, s.stk[1:])
 		s.stk = s1
-	} else {
+	default:
 		s1 := s.stk[sz-idx : sz]
 		s.stk = s.stk[:sz-idx-1]
 		s.stk = append(s.stk, s1...)
@@ -198,7 +205,8 @@ func (s *stack) Tuck() error {
 // DropN(2): [... x1 x2] -> [...]
 func (s *stack) DropN(n int32) error {
 	if n < 1 {
-		return ErrStackInvalidArgs
+		str := fmt.Sprintf("attempt to drop %d items from stack", n)
+		return scriptError(ErrInvalidStackOperation, str)
 	}
 
 	for ; n > 0; n-- {
@@ -217,7 +225,8 @@ func (s *stack) DropN(n int32) error {
 // DupN(2): [... x1 x2] -> [... x1 x2 x1 x2]
 func (s *stack) DupN(n int32) error {
 	if n < 1 {
-		return ErrStackInvalidArgs
+		str := fmt.Sprintf("attempt to dup %d stack items", n)
+		return scriptError(ErrInvalidStackOperation, str)
 	}
 
 	// Iteratively duplicate the value n-1 down the stack n times.
@@ -239,7 +248,8 @@ func (s *stack) DupN(n int32) error {
 // RotN(2): [... x1 x2 x3 x4 x5 x6] -> [... x3 x4 x5 x6 x1 x2]
 func (s *stack) RotN(n int32) error {
 	if n < 1 {
-		return ErrStackInvalidArgs
+		str := fmt.Sprintf("attempt to rotate %d stack items", n)
+		return scriptError(ErrInvalidStackOperation, str)
 	}
 
 	// Nip the 3n-1th item from the stack to the top n times to rotate
@@ -263,7 +273,8 @@ func (s *stack) RotN(n int32) error {
 // SwapN(2): [... x1 x2 x3 x4] -> [... x3 x4 x1 x2]
 func (s *stack) SwapN(n int32) error {
 	if n < 1 {
-		return ErrStackInvalidArgs
+		str := fmt.Sprintf("attempt to swap %d stack items", n)
+		return scriptError(ErrInvalidStackOperation, str)
 	}
 
 	entry := 2*n - 1
@@ -286,7 +297,9 @@ func (s *stack) SwapN(n int32) error {
 // OverN(2): [... x1 x2 x3 x4] -> [... x1 x2 x3 x4 x1 x2]
 func (s *stack) OverN(n int32) error {
 	if n < 1 {
-		return ErrStackInvalidArgs
+		str := fmt.Sprintf("attempt to perform over on %d stack items",
+			n)
+		return scriptError(ErrInvalidStackOperation, str)
 	}
 
 	// Copy 2n-1th entry to top of the stack.

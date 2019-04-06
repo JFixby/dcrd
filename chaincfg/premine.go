@@ -1,5 +1,5 @@
 // Copyright (c) 2014 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -3156,23 +3156,26 @@ var BlockOneLedgerMainNet = []*TokenPayout{
 	{"DsZZX6MSkR1RWThuZkmtrcWs5exTHiVUrE3", 282.63795424 * 1e8},
 }
 
-// BlockOneLedgerTestNet is the block one output ledger for the test
-// network.
-var BlockOneLedgerTestNet = []*TokenPayout{
-	{"TsmWaPM77WSyA3aiQ2Q1KnwGDVWvEkhipBc", 100000 * 1e8},
-}
-
-// BlockOneLedgerTestNet2 is the block one output ledger for the 2nd test
-// network.
-var BlockOneLedgerTestNet2 = []*TokenPayout{
-	{"TsT5rhHYqJF7sXouh9jHtwQEn5YJ9KKc5L9", 100000 * 1e8},
+// BlockOneLedgerTestNet3 is the block one output ledger for testnet version 3.
+var BlockOneLedgerTestNet3 = []*TokenPayout{
+	{"Tsi6gGYNSMmFwi7JoL5Li39SrERZTTMu6vY", 80000 * 1e8},
+	{"TscB7V5RuR1oXpA364DFEsNDuAs8Rk6BHJE", 20000 * 1e8},
 }
 
 // BlockOneLedgerSimNet is the block one output ledger for the simulation
-// network. See under "Decred organization related parameters" in params.go
-// for information on how to spend these outputs.
+// network.  See "Decred organization related parameters" in simnetparams.go for
+// information on how to spend these outputs.
 var BlockOneLedgerSimNet = []*TokenPayout{
 	{"Sshw6S86G2bV6W32cbc7EhtFy8f93rU6pae", 100000 * 1e8},
 	{"SsjXRK6Xz6CFuBt6PugBvrkdAa4xGbcZ18w", 100000 * 1e8},
 	{"SsfXiYkYkCoo31CuVQw428N6wWKus2ZEw5X", 100000 * 1e8},
+}
+
+// BlockOneLedgerRegNet is the block one output ledger for the regression test
+// network.  See "Decred organization related parameters" in regnetparams.go for
+// information on how to spend these outputs.
+var BlockOneLedgerRegNet = []*TokenPayout{
+	{"RsKrWb7Vny1jnzL1sDLgKTAteh9RZcRr5g6", 100000 * 1e8},
+	{"Rs8ca5cDALtsMVD4PV3xvFTC7dmuU1juvLv", 100000 * 1e8},
+	{"RsHzbGt6YajuHpurtpqXXHz57LmYZK8w9tX", 100000 * 1e8},
 }

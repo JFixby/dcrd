@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file.
 
 /*
-dcrd is a full-node decred implementation written in Go.
+dcrd is a full-node Decred implementation written in Go.
 
 The default options are sane for most users.  This means dcrd will work 'out of
 the box' for most users.  However, there are also a wide variety of flags that
@@ -35,6 +35,8 @@ Application Options:
                             listen interfaces via --listen
       --listen=             Add an interface/port to listen for connections
                             (default all interfaces port: 9108, testnet: 19108)
+      --maxsameip=          Max number of connections with the same IP -- 0 to
+                            disable (default: 5)
       --maxpeers=           Max number of inbound and outbound peers (125)
       --nobanning           Disable banning of misbehaving peers
       --banduration=        How long to ban misbehaving peers.  Valid time units
@@ -74,6 +76,7 @@ Application Options:
                             credentials for each connection.
       --testnet             Use the test network
       --simnet              Use the simulation test network
+      --regnet              Use the regression test network
       --nocheckpoints       Disable built-in checkpoints.  Don't do this unless
                             you know what you're doing.
       --dbtype=             Database backend to use for the Block Chain (ffldb)
@@ -108,23 +111,25 @@ Application Options:
       --blockminsize=       Mininum block size in bytes to be used when creating
                             a block
       --blockmaxsize=       Maximum block size in bytes to be used when creating
-                            a block (750000)
+                            a block (375000)
       --blockprioritysize=  Size in bytes for high-priority/low-fee transactions
-                            when creating a block (50000)
-      --getworkkey=         DEPRECATED -- Use the --miningaddr option instead
+                            when creating a block (20000)
       --nonaggressive       Disable mining off of the parent block of the blockchain
                             if there aren't enough voters
       --nominingstatesync   Disable synchronizing the mining state with other nodes
       --allowoldvotes       Enable the addition of very old votes to the mempool
 
-      --nopeerbloomfilters  Disable bloom filtering support.
       --sigcachemaxsize=    The maximum number of entries in the signature
                             verification cache.
       --blocksonly          Do not accept transactions from remote peers.
-      --relaynonstd         Relay non-standard transactions regardless of the
-                            default settings for the active network.
+      --acceptnonstd        Accept and relay non-standard transactions to
+                            the network regardless of the default settings
+                            for the active network.
       --rejectnonstd        Reject non-standard transactions regardless of the
                             default settings for the active network.
+      --altdnsnames:        Specify additional dns names to use when
+                            generating the rpc server certificate
+                            [supports DCRD_ALT_DNSNAMES environment variable]
 
 Help Options:
   -h, --help           Show this help message

@@ -21,10 +21,11 @@ import (
 type UndoTicketDataSlice []ticketdb.UndoTicketData
 
 // Node is in-memory stake data for a node.  It contains a list of database
-// updates to be written in the case that the block is inserted in the main chain
-// database.  Because of its use of immutable treap data structures, it allows for
-// a fast, efficient in-memory representation of the ticket database for each
-// node.  It handles connection of and disconnection of new blocks simply.
+// updates to be written in the case that the block is inserted in the main
+// chain database.  Because of its use of immutable treap data structures, it
+// allows for a fast, efficient in-memory representation of the ticket database
+// for each node.  It handles connection of and disconnection of new blocks
+// simply.
 //
 // Like the immutable treap structures, stake nodes themselves are considered
 // to be immutable.  The connection or disconnection of past or future nodes
@@ -85,7 +86,10 @@ func (sn *Node) SpentByBlock() []chainhash.Hash {
 	return spent
 }
 
-// MissedByBlock returns the tickets that were missed in this block.
+// MissedByBlock returns the tickets that were missed in this block. This
+// includes expired tickets and winning tickets that were not spent by a vote.
+// Also note that when a miss is later revoked, that ticket hash will also
+// appear in the output of this function for the block with the revocation.
 func (sn *Node) MissedByBlock() []chainhash.Hash {
 	var missed []chainhash.Hash
 	for _, undo := range sn.databaseUndoUpdate {
@@ -95,6 +99,21 @@ func (sn *Node) MissedByBlock() []chainhash.Hash {
 	}
 
 	return missed
+}
+
+// ExpiredByBlock returns the tickets that expired in this block. This is a
+// subset of the missed tickets returned by MissedByBlock. The output only
+// includes the initial expiration of the ticket, not when an expired ticket is
+// revoked. This is unlike MissedByBlock that includes the revocation as well.
+func (sn *Node) ExpiredByBlock() []chainhash.Hash {
+	var expired []chainhash.Hash
+	for _, undo := range sn.databaseUndoUpdate {
+		if undo.Expired && !undo.Revoked {
+			expired = append(expired, undo.TicketHash)
+		}
+	}
+
+	return expired
 }
 
 // ExistsLiveTicket returns whether or not a ticket exists in the live ticket
@@ -204,6 +223,19 @@ func genesisNode(params *chaincfg.Params) *Node {
 		nextWinners:          make([]chainhash.Hash, 0),
 		params:               params,
 	}
+}
+
+// ResetDatabase resets the ticket database back to the genesis block.
+func ResetDatabase(dbTx database.Tx, params *chaincfg.Params) error {
+	// Remove all of the database buckets.
+	err := ticketdb.DbRemoveAllBuckets(dbTx)
+	if err != nil {
+		return err
+	}
+
+	// Initialize the database.
+	_, err = InitDatabaseState(dbTx, params)
+	return err
 }
 
 // InitDatabaseState initializes the chain with the best state being the
@@ -417,7 +449,7 @@ func safeDelete(t *tickettreap.Immutable, k tickettreap.Key) (*tickettreap.Immut
 // the argument node is the parent node, and that the child stake node is
 // returned after subsequent modification of the parent node's immutable
 // data.
-func connectNode(node *Node, header wire.BlockHeader, ticketsSpentInBlock, revokedTickets, newTickets []chainhash.Hash) (*Node, error) {
+func connectNode(node *Node, lotteryIV chainhash.Hash, ticketsVoted, revokedTickets, newTickets []chainhash.Hash) (*Node, error) {
 	if node == nil {
 		return nil, fmt.Errorf("missing stake node pointer input when connecting")
 	}
@@ -433,16 +465,16 @@ func connectNode(node *Node, header wire.BlockHeader, ticketsSpentInBlock, revok
 		params:               node.params,
 	}
 
-	// We only have to deal with voted related issues and expiry after
+	// We only have to deal with vote-related issues and expiry after
 	// StakeEnabledHeight.
 	var err error
 	if connectedNode.height >= uint32(connectedNode.params.StakeEnabledHeight) {
 		// Basic sanity check.
-		for i := range ticketsSpentInBlock {
-			if !hashInSlice(ticketsSpentInBlock[i], node.nextWinners) {
+		for i := range ticketsVoted {
+			if !hashInSlice(ticketsVoted[i], node.nextWinners) {
 				return nil, stakeRuleError(ErrUnknownTicketSpent,
 					fmt.Sprintf("unknown ticket %v spent in block",
-						ticketsSpentInBlock[i]))
+						ticketsVoted[i]))
 			}
 		}
 
@@ -463,7 +495,7 @@ func connectNode(node *Node, header wire.BlockHeader, ticketsSpentInBlock, revok
 			// ticket should still be in the live tickets treap, we probably
 			// do not have to use the safe delete functions, but do so anyway
 			// just to be safe.
-			if hashInSlice(ticket, ticketsSpentInBlock) {
+			if hashInSlice(ticket, ticketsVoted) {
 				v.Spent = true
 				v.Missed = false
 				connectedNode.liveTickets, err =
@@ -601,16 +633,12 @@ func connectNode(node *Node, header wire.BlockHeader, ticketsSpentInBlock, revok
 			})
 	}
 
-	// The first block voted on is at StakeEnabledHeight, so begin calculating
-	// winners at the block before StakeEnabledHeight.
+	// The first block voted on is at StakeValidationHeight, so begin calculating
+	// winners at the block before StakeValidationHeight.
 	if connectedNode.height >=
 		uint32(connectedNode.params.StakeValidationHeight-1) {
 		// Find the next set of winners.
-		hB, err := header.Bytes()
-		if err != nil {
-			return nil, err
-		}
-		prng := NewHash256PRNG(hB)
+		prng := NewHash256PRNGFromIV(lotteryIV)
 		idxs, err := findTicketIdxs(connectedNode.liveTickets.Len(),
 			connectedNode.params.TicketsPerBlock, prng)
 		if err != nil {
@@ -640,16 +668,16 @@ func connectNode(node *Node, header wire.BlockHeader, ticketsSpentInBlock, revok
 
 // ConnectNode connects a stake node to the node and returns a pointer
 // to the stake node of the child.
-func (sn *Node) ConnectNode(header wire.BlockHeader, ticketsSpentInBlock, revokedTickets, newTickets []chainhash.Hash) (*Node, error) {
-	return connectNode(sn, header, ticketsSpentInBlock,
-		revokedTickets, newTickets)
+func (sn *Node) ConnectNode(lotteryIV chainhash.Hash, ticketsVoted, revokedTickets, newTickets []chainhash.Hash) (*Node, error) {
+	return connectNode(sn, lotteryIV, ticketsVoted, revokedTickets,
+		newTickets)
 }
 
 // disconnectNode disconnects a stake node from itself and returns the state of
 // the parent node.  The database transaction should be included if the
 // UndoTicketDataSlice or tickets are nil in order to look up the undo data or
 // tickets from the database.
-func disconnectNode(node *Node, parentHeader wire.BlockHeader, parentUtds UndoTicketDataSlice, parentTickets []chainhash.Hash, dbTx database.Tx) (*Node, error) {
+func disconnectNode(node *Node, parentLotteryIV chainhash.Hash, parentUtds UndoTicketDataSlice, parentTickets []chainhash.Hash, dbTx database.Tx) (*Node, error) {
 	// Edge case for the parent being the genesis block.
 	if node.height == 1 {
 		return genesisNode(node.params), nil
@@ -783,12 +811,8 @@ func disconnectNode(node *Node, parentHeader wire.BlockHeader, parentUtds UndoTi
 	}
 
 	if node.height >= uint32(node.params.StakeValidationHeight) {
-		phB, err := parentHeader.Bytes()
-		if err != nil {
-			return nil, err
-		}
-		prng := NewHash256PRNG(phB)
-		_, err = findTicketIdxs(restoredNode.liveTickets.Len(),
+		prng := NewHash256PRNGFromIV(parentLotteryIV)
+		_, err := findTicketIdxs(restoredNode.liveTickets.Len(),
 			node.params.TicketsPerBlock, prng)
 		if err != nil {
 			return nil, err
@@ -803,8 +827,8 @@ func disconnectNode(node *Node, parentHeader wire.BlockHeader, parentUtds UndoTi
 
 // DisconnectNode disconnects a stake node from the node and returns a pointer
 // to the stake node of the parent.
-func (sn *Node) DisconnectNode(parentHeader wire.BlockHeader, parentUtds UndoTicketDataSlice, parentTickets []chainhash.Hash, dbTx database.Tx) (*Node, error) {
-	return disconnectNode(sn, parentHeader, parentUtds, parentTickets, dbTx)
+func (sn *Node) DisconnectNode(parentLotteryIV chainhash.Hash, parentUtds UndoTicketDataSlice, parentTickets []chainhash.Hash, dbTx database.Tx) (*Node, error) {
+	return disconnectNode(sn, parentLotteryIV, parentUtds, parentTickets, dbTx)
 }
 
 // WriteConnectedBestNode writes the newly connected best node to the database

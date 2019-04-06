@@ -1,3 +1,8 @@
+// Copyright (c) 2013-2015 The btcsuite developers
+// Copyright (c) 2015-2019 The Decred developers
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -10,7 +15,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/decred/dcrd/dcrjson"
+	"github.com/decred/dcrd/dcrjson/v2"
 
 	"github.com/btcsuite/go-socks/socks"
 )
@@ -37,20 +42,22 @@ func newHTTPClient(cfg *config) (*http.Client, error) {
 
 	// Configure TLS if needed.
 	var tlsConfig *tls.Config
-	if !cfg.NoTLS && cfg.RPCCert != "" {
-		pem, err := ioutil.ReadFile(cfg.RPCCert)
-		if err != nil {
-			return nil, err
-		}
-
-		pool := x509.NewCertPool()
-		if ok := pool.AppendCertsFromPEM(pem); !ok {
-			return nil, fmt.Errorf("invalid certificate file: %v",
-				cfg.RPCCert)
-		}
+	if !cfg.NoTLS {
 		tlsConfig = &tls.Config{
-			RootCAs:            pool,
 			InsecureSkipVerify: cfg.TLSSkipVerify,
+		}
+		if !cfg.TLSSkipVerify && cfg.RPCCert != "" {
+			pem, err := ioutil.ReadFile(cfg.RPCCert)
+			if err != nil {
+				return nil, err
+			}
+
+			pool := x509.NewCertPool()
+			if ok := pool.AppendCertsFromPEM(pem); !ok {
+				return nil, fmt.Errorf("invalid certificate file: %v",
+					cfg.RPCCert)
+			}
+			tlsConfig.RootCAs = pool
 		}
 	}
 

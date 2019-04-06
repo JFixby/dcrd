@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -40,6 +40,7 @@ func TestRegister(t *testing.T) {
 		err  error
 	}
 
+	testNetParams := &TestNet3Params
 	tests := []struct {
 		name        string
 		register    []registerTest
@@ -57,12 +58,17 @@ func TestRegister(t *testing.T) {
 				},
 				{
 					name:   "duplicate testnet",
-					params: &TestNet2Params,
+					params: testNetParams,
 					err:    ErrDuplicateNet,
 				},
 				{
 					name:   "duplicate simnet",
 					params: &SimNetParams,
+					err:    ErrDuplicateNet,
+				},
+				{
+					name:   "duplicate regnet",
+					params: &RegNetParams,
 					err:    ErrDuplicateNet,
 				},
 			},
@@ -72,11 +78,15 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet2Params.PubKeyHashAddrID,
+					magic: testNetParams.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
 					magic: SimNetParams.PubKeyHashAddrID,
+					valid: true,
+				},
+				{
+					magic: RegNetParams.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
@@ -94,11 +104,15 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet2Params.ScriptHashAddrID,
+					magic: testNetParams.ScriptHashAddrID,
 					valid: true,
 				},
 				{
 					magic: SimNetParams.ScriptHashAddrID,
+					valid: true,
+				},
+				{
+					magic: RegNetParams.ScriptHashAddrID,
 					valid: true,
 				},
 				{
@@ -117,13 +131,18 @@ func TestRegister(t *testing.T) {
 					err:  nil,
 				},
 				{
-					priv: TestNet2Params.HDPrivateKeyID[:],
-					want: TestNet2Params.HDPublicKeyID[:],
+					priv: testNetParams.HDPrivateKeyID[:],
+					want: testNetParams.HDPublicKeyID[:],
 					err:  nil,
 				},
 				{
 					priv: SimNetParams.HDPrivateKeyID[:],
 					want: SimNetParams.HDPublicKeyID[:],
+					err:  nil,
+				},
+				{
+					priv: RegNetParams.HDPrivateKeyID[:],
+					want: RegNetParams.HDPublicKeyID[:],
 					err:  nil,
 				},
 				{
@@ -155,11 +174,15 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet2Params.PubKeyHashAddrID,
+					magic: testNetParams.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
 					magic: SimNetParams.PubKeyHashAddrID,
+					valid: true,
+				},
+				{
+					magic: RegNetParams.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
@@ -177,11 +200,15 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet2Params.ScriptHashAddrID,
+					magic: testNetParams.ScriptHashAddrID,
 					valid: true,
 				},
 				{
 					magic: SimNetParams.ScriptHashAddrID,
+					valid: true,
+				},
+				{
+					magic: RegNetParams.ScriptHashAddrID,
 					valid: true,
 				},
 				{
@@ -211,12 +238,17 @@ func TestRegister(t *testing.T) {
 				},
 				{
 					name:   "duplicate testnet",
-					params: &TestNet2Params,
+					params: testNetParams,
 					err:    ErrDuplicateNet,
 				},
 				{
 					name:   "duplicate simnet",
 					params: &SimNetParams,
+					err:    ErrDuplicateNet,
+				},
+				{
+					name:   "duplicate regnet",
+					params: &RegNetParams,
 					err:    ErrDuplicateNet,
 				},
 				{
@@ -231,11 +263,15 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet2Params.PubKeyHashAddrID,
+					magic: testNetParams.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
 					magic: SimNetParams.PubKeyHashAddrID,
+					valid: true,
+				},
+				{
+					magic: RegNetParams.PubKeyHashAddrID,
 					valid: true,
 				},
 				{
@@ -253,11 +289,15 @@ func TestRegister(t *testing.T) {
 					valid: true,
 				},
 				{
-					magic: TestNet2Params.ScriptHashAddrID,
+					magic: testNetParams.ScriptHashAddrID,
 					valid: true,
 				},
 				{
 					magic: SimNetParams.ScriptHashAddrID,
+					valid: true,
+				},
+				{
+					magic: RegNetParams.ScriptHashAddrID,
 					valid: true,
 				},
 				{
@@ -276,13 +316,18 @@ func TestRegister(t *testing.T) {
 					err:  nil,
 				},
 				{
-					priv: TestNet2Params.HDPrivateKeyID[:],
-					want: TestNet2Params.HDPublicKeyID[:],
+					priv: testNetParams.HDPrivateKeyID[:],
+					want: testNetParams.HDPublicKeyID[:],
 					err:  nil,
 				},
 				{
 					priv: SimNetParams.HDPrivateKeyID[:],
 					want: SimNetParams.HDPublicKeyID[:],
+					err:  nil,
+				},
+				{
+					priv: RegNetParams.HDPrivateKeyID[:],
+					want: RegNetParams.HDPublicKeyID[:],
 					err:  nil,
 				},
 				{
@@ -325,15 +370,15 @@ func TestRegister(t *testing.T) {
 			}
 		}
 		for i, magTest := range test.hdMagics {
-			pubKey, err := HDPrivateKeyToPublicKeyID(magTest.priv[:])
+			pubKey, err := HDPrivateKeyToPublicKeyID(magTest.priv)
 			if !reflect.DeepEqual(err, magTest.err) {
 				t.Errorf("%s: HD magic %d mismatched error: got %v expected %v ",
 					test.name, i, err, magTest.err)
 				continue
 			}
-			if magTest.err == nil && !bytes.Equal(pubKey, magTest.want[:]) {
+			if magTest.err == nil && !bytes.Equal(pubKey, magTest.want) {
 				t.Errorf("%s: HD magic %d private and public mismatch: got %v expected %v ",
-					test.name, i, pubKey, magTest.want[:])
+					test.name, i, pubKey, magTest.want)
 			}
 		}
 	}

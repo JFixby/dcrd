@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Decred developers
+// Copyright (c) 2016-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -11,62 +11,55 @@ import (
 
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
-	"github.com/decred/dcrd/wire"
 )
 
-// newFakeChain returns a chain that is usable for syntetic tests.  It is
-// important to note that this chain has no database associated with it, so
-// it is not usable with all functions and the tests must take care when making
-// use of it.
-func newFakeChain(params *chaincfg.Params) *BlockChain {
-	// Create a genesis block node and block index index populated with it
-	// for use when creating the fake chain below.
-	node := newBlockNode(&params.GenesisBlock.Header, nil, nil, nil)
-	node.inMainChain = true
-	index := make(map[chainhash.Hash]*blockNode)
-	index[node.hash] = node
-
-	return &BlockChain{
-		chainParams:      params,
-		deploymentCaches: newThresholdCaches(params),
-		bestNode:         node,
-		index:            index,
-		isVoterMajorityVersionCache:   make(map[[stakeMajorityCacheKeySize]byte]bool),
-		isStakeMajorityVersionCache:   make(map[[stakeMajorityCacheKeySize]byte]bool),
-		calcPriorStakeVersionCache:    make(map[[chainhash.HashSize]byte]uint32),
-		calcVoterVersionIntervalCache: make(map[[chainhash.HashSize]byte]uint32),
-		calcStakeVersionCache:         make(map[[chainhash.HashSize]byte]uint32),
+// isVoterMajorityVersion determines if minVer requirement is met based on
+// prevNode.  The function always uses the voter versions of the prior window.
+// For example, if StakeVersionInterval = 11 and StakeValidationHeight = 13 the
+// windows start at 13 + 11 -1 = 24 and are as follows: 24-34, 35-45, 46-56 ...
+// If height comes in at 35 we use the 24-34 window, up to height 45.
+// If height comes in at 46 we use the 35-45 window, up to height 56 etc.
+//
+// This function MUST be called with the chain state lock held (for writes).
+func (b *BlockChain) isVoterMajorityVersion(minVer uint32, prevNode *blockNode) bool {
+	// Walk blockchain backwards to calculate version.
+	node := b.findStakeVersionPriorNode(prevNode)
+	if node == nil {
+		return 0 >= minVer
 	}
-}
 
-// newFakeNode creates a block node connected to the passed parent with the
-// provided fields populated and fake values for the other fields.
-func newFakeNode(parent *blockNode, blockVersion int32, stakeVersion uint32, bits uint32, timestamp time.Time) *blockNode {
-	// Make up a header and create a block node from it.
-	header := &wire.BlockHeader{
-		Version:      blockVersion,
-		PrevBlock:    parent.hash,
-		VoteBits:     0x01,
-		Bits:         bits,
-		Height:       uint32(parent.height) + 1,
-		Timestamp:    timestamp,
-		StakeVersion: stakeVersion,
+	// Generate map key and look up cached result.
+	key := stakeMajorityCacheVersionKey(minVer, &node.hash)
+	if result, ok := b.isVoterMajorityVersionCache[key]; ok {
+		return result
 	}
-	node := newBlockNode(header, nil, nil, nil)
-	node.parent = parent
-	node.workSum.Add(parent.workSum, node.workSum)
-	return node
-}
 
-// appendFakeVotes appends the passed number of votes to the node with the
-// provided version and vote bits.
-func appendFakeVotes(node *blockNode, numVotes uint16, voteVersion uint32, voteBits uint16) {
-	for i := uint16(0); i < numVotes; i++ {
-		node.votes = append(node.votes, VoteVersionTuple{
-			Version: voteVersion,
-			Bits:    voteBits,
-		})
+	// Tally both the total number of votes in the previous stake version validation
+	// interval and how many of those votes are at least the requested minimum
+	// version.
+	totalVotesFound := int32(0)
+	versionCount := int32(0)
+	iterNode := node
+	for i := int64(0); i < b.chainParams.StakeVersionInterval && iterNode != nil; i++ {
+		totalVotesFound += int32(len(iterNode.votes))
+		for _, v := range iterNode.votes {
+			if v.Version >= minVer {
+				versionCount++
+			}
+		}
+
+		iterNode = iterNode.parent
 	}
+
+	// Determine the required amount of votes to reach supermajority.
+	numRequired := totalVotesFound * b.chainParams.StakeMajorityMultiplier /
+		b.chainParams.StakeMajorityDivisor
+
+	// Cache value.
+	result := versionCount >= numRequired
+	b.isVoterMajorityVersionCache[key] = result
+
+	return result
 }
 
 func TestCalcWantHeight(t *testing.T) {
@@ -100,15 +93,21 @@ func TestCalcWantHeight(t *testing.T) {
 			multiplier: 5000,
 		},
 		{
-			name:       "testnet2 params",
-			skip:       chaincfg.TestNet2Params.StakeValidationHeight,
-			interval:   chaincfg.TestNet2Params.StakeVersionInterval,
+			name:       "testnet3 params",
+			skip:       chaincfg.TestNet3Params.StakeValidationHeight,
+			interval:   chaincfg.TestNet3Params.StakeVersionInterval,
 			multiplier: 1000,
 		},
 		{
 			name:       "simnet params",
 			skip:       chaincfg.SimNetParams.StakeValidationHeight,
 			interval:   chaincfg.SimNetParams.StakeVersionInterval,
+			multiplier: 10000,
+		},
+		{
+			name:       "regnet params",
+			skip:       chaincfg.RegNetParams.StakeValidationHeight,
+			interval:   chaincfg.RegNetParams.StakeVersionInterval,
 			multiplier: 10000,
 		},
 		{
@@ -124,7 +123,7 @@ func TestCalcWantHeight(t *testing.T) {
 		t.Logf("running: %v skip: %v interval: %v",
 			test.name, test.skip, test.interval)
 
-		start := int64(test.skip + test.interval*2)
+		start := test.skip + test.interval*2
 		expectedHeight := start - 1 // zero based
 		x := int64(0) + test.negative
 		for i := start; i < test.multiplier*test.interval; i++ {
@@ -155,10 +154,10 @@ func TestCalcStakeVersionCorners(t *testing.T) {
 	// Generate enough nodes to reach stake validation height with stake
 	// versions set to 0.
 	bc := newFakeChain(params)
-	node := bc.bestNode
+	node := bc.bestChain.Tip()
 	for i := int64(1); i <= svh; i++ {
 		node = newFakeNode(node, 0, 0, 0, time.Now())
-		bc.bestNode = node
+		bc.bestChain.SetTip(node)
 	}
 	if node.height != svh {
 		t.Fatalf("invalid height got %v expected %v", node.height, svh)
@@ -166,15 +165,12 @@ func TestCalcStakeVersionCorners(t *testing.T) {
 
 	// Generate 3 intervals with v2 votes and calculated stake version.
 	for i := int64(0); i < svi*3; i++ {
-		sv, err := bc.calcStakeVersionByNode(node)
-		if err != nil {
-			t.Fatalf("calcStakeVersionByNode: unexpected error: %v", err)
-		}
+		sv := bc.calcStakeVersion(node)
 
 		// Set vote and stake versions.
 		node = newFakeNode(node, 3, sv, 0, time.Now())
 		appendFakeVotes(node, params.TicketsPerBlock, 2, 0)
-		bc.bestNode = node
+		bc.bestChain.SetTip(node)
 	}
 
 	// Versions 0 and 2 should now be considered the majority version, but
@@ -191,15 +187,12 @@ func TestCalcStakeVersionCorners(t *testing.T) {
 
 	// Generate 3 intervals with v4 votes and calculated stake version.
 	for i := int64(0); i < svi*3; i++ {
-		sv, err := bc.calcStakeVersionByNode(node)
-		if err != nil {
-			t.Fatalf("calcStakeVersionByNode: unexpected error: %v", err)
-		}
+		sv := bc.calcStakeVersion(node)
 
 		// Set vote and stake versions.
 		node = newFakeNode(node, 3, sv, 0, time.Now())
 		appendFakeVotes(node, params.TicketsPerBlock, 4, 0)
-		bc.bestNode = node
+		bc.bestChain.SetTip(node)
 	}
 
 	// Versions up to and including v4 should now be considered the majority
@@ -217,15 +210,12 @@ func TestCalcStakeVersionCorners(t *testing.T) {
 
 	// Generate 3 intervals with v2 votes and calculated stake version.
 	for i := int64(0); i < svi*3; i++ {
-		sv, err := bc.calcStakeVersionByNode(node)
-		if err != nil {
-			t.Fatalf("calcStakeVersionByNode: unexpected error: %v", err)
-		}
+		sv := bc.calcStakeVersion(node)
 
 		// Set vote and stake versions.
 		node = newFakeNode(node, 3, sv, 0, time.Now())
 		appendFakeVotes(node, params.TicketsPerBlock, 2, 0)
-		bc.bestNode = node
+		bc.bestChain.SetTip(node)
 	}
 
 	// Versions up to and including v4 should still be considered the
@@ -245,15 +235,12 @@ func TestCalcStakeVersionCorners(t *testing.T) {
 
 	// Generate 2 intervals with v5 votes and calculated stake version.
 	for i := int64(0); i < svi*2; i++ {
-		sv, err := bc.calcStakeVersionByNode(node)
-		if err != nil {
-			t.Fatalf("calcStakeVersionByNode: unexpected error: %v", err)
-		}
+		sv := bc.calcStakeVersion(node)
 
 		// Set vote and stake versions.
 		node = newFakeNode(node, 3, sv, 0, time.Now())
 		appendFakeVotes(node, params.TicketsPerBlock, 5, 0)
-		bc.bestNode = node
+		bc.bestChain.SetTip(node)
 	}
 
 	// Versions up to and including v5 should now be considered the majority
@@ -271,15 +258,12 @@ func TestCalcStakeVersionCorners(t *testing.T) {
 
 	// Generate 1 interval with v4 votes to test the edge condition.
 	for i := int64(0); i < svi; i++ {
-		sv, err := bc.calcStakeVersionByNode(node)
-		if err != nil {
-			t.Fatalf("calcStakeVersionByNode: unexpected error: %v", err)
-		}
+		sv := bc.calcStakeVersion(node)
 
 		// Set vote and stake versions.
 		node = newFakeNode(node, 3, sv, 0, time.Now())
 		appendFakeVotes(node, params.TicketsPerBlock, 4, 0)
-		bc.bestNode = node
+		bc.bestChain.SetTip(node)
 
 	}
 
@@ -300,15 +284,12 @@ func TestCalcStakeVersionCorners(t *testing.T) {
 
 	// Generate another interval with v4 votes.
 	for i := int64(0); i < svi; i++ {
-		sv, err := bc.calcStakeVersionByNode(node)
-		if err != nil {
-			t.Fatalf("calcStakeVersionByNode: unexpected error: %v", err)
-		}
+		sv := bc.calcStakeVersion(node)
 
 		// Set stake versions.
 		node = newFakeNode(node, 3, sv, 0, time.Now())
 		appendFakeVotes(node, params.TicketsPerBlock, 4, 0)
-		bc.bestNode = node
+		bc.bestChain.SetTip(node)
 
 	}
 
@@ -328,9 +309,9 @@ func TestCalcStakeVersionCorners(t *testing.T) {
 	}
 }
 
-// TestCalcStakeVersionByNode ensures that stake version calculation works as
+// TestCalcStakeVersion ensures that stake version calculation works as
 // intended when
-func TestCalcStakeVersionByNode(t *testing.T) {
+func TestCalcStakeVersion(t *testing.T) {
 	params := &chaincfg.SimNetParams
 	svh := params.StakeValidationHeight
 	svi := params.StakeVersionInterval
@@ -347,10 +328,10 @@ func TestCalcStakeVersionByNode(t *testing.T) {
 			numNodes:      svh + svi*3,
 			expectVersion: 3,
 			set: func(node *blockNode) {
-				if int64(node.height) > svh {
+				if node.height > svh {
 					appendFakeVotes(node, tpb, 3, 0)
-					node.header.StakeVersion = 2
-					node.header.Version = 3
+					node.stakeVersion = 2
+					node.blockVersion = 3
 				}
 			},
 		},
@@ -359,10 +340,10 @@ func TestCalcStakeVersionByNode(t *testing.T) {
 			numNodes:      svh + svi*3,
 			expectVersion: 3,
 			set: func(node *blockNode) {
-				if int64(node.height) > svh {
+				if node.height > svh {
 					appendFakeVotes(node, tpb, 2, 0)
-					node.header.StakeVersion = 3
-					node.header.Version = 3
+					node.stakeVersion = 3
+					node.blockVersion = 3
 				}
 			},
 		},
@@ -370,19 +351,15 @@ func TestCalcStakeVersionByNode(t *testing.T) {
 
 	for _, test := range tests {
 		bc := newFakeChain(params)
-		node := bc.bestNode
+		node := bc.bestChain.Tip()
 
 		for i := int64(1); i <= test.numNodes; i++ {
 			node = newFakeNode(node, 1, 0, 0, time.Now())
 			test.set(node)
-			bc.bestNode = node
+			bc.bestChain.SetTip(node)
 		}
 
-		version, err := bc.calcStakeVersionByNode(bc.bestNode)
-		if err != nil {
-			t.Fatalf("calcStakeVersionByNode: unexpected error: %v",
-				err)
-		}
+		version := bc.calcStakeVersion(bc.bestChain.Tip())
 		if version != test.expectVersion {
 			t.Fatalf("version mismatch: got %v expected %v",
 				version, test.expectVersion)
@@ -393,7 +370,7 @@ func TestCalcStakeVersionByNode(t *testing.T) {
 // TestIsStakeMajorityVersion ensures that determining the current majority
 // stake version works as intended under a wide variety of scenarios.
 func TestIsStakeMajorityVersion(t *testing.T) {
-	params := &chaincfg.MainNetParams
+	params := &chaincfg.RegNetParams
 	svh := params.StakeValidationHeight
 	svi := params.StakeVersionInterval
 	tpb := params.TicketsPerBlock
@@ -445,7 +422,7 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "100%",
 			numNodes: svh + svi,
 			set: func(node *blockNode) {
-				if int64(node.height) > svh {
+				if node.height > svh {
 					appendFakeVotes(node, tpb, 2, 0)
 				}
 			},
@@ -458,11 +435,11 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "50%",
 			numNodes: svh + (svi * 2),
 			set: func(node *blockNode) {
-				if int64(node.height) <= svh {
+				if node.height <= svh {
 					return
 				}
 
-				if int64(node.height) < svh+svi {
+				if node.height < svh+svi {
 					appendFakeVotes(node, tpb, 1, 0)
 					return
 				}
@@ -487,11 +464,11 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "75%-1",
 			numNodes: svh + (svi * 2),
 			set: func(node *blockNode) {
-				if int64(node.height) < svh {
+				if node.height < svh {
 					return
 				}
 
-				if int64(node.height) < svh+svi {
+				if node.height < svh+svi {
 					appendFakeVotes(node, tpb, 1, 0)
 					return
 				}
@@ -516,11 +493,11 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "75%",
 			numNodes: svh + (svi * 2),
 			set: func(node *blockNode) {
-				if int64(node.height) <= svh {
+				if node.height <= svh {
 					return
 				}
 
-				if int64(node.height) < svh+svi {
+				if node.height < svh+svi {
 					appendFakeVotes(node, tpb, 1, 0)
 					return
 				}
@@ -545,11 +522,11 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "100% after several non majority intervals",
 			numNodes: svh + (params.StakeVersionInterval * 222),
 			set: func(node *blockNode) {
-				if int64(node.height) <= svh {
+				if node.height <= svh {
 					return
 				}
 
-				if int64(node.height) < svh+svi {
+				if node.height < svh+svi {
 					appendFakeVotes(node, tpb, 1, 0)
 					return
 				}
@@ -567,7 +544,7 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "no majority ever",
 			numNodes: svh + (svi * 8),
 			set: func(node *blockNode) {
-				if int64(node.height) <= svh {
+				if node.height <= svh {
 					return
 				}
 
@@ -584,11 +561,11 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "75%-1 with 3 votes",
 			numNodes: svh + (svi * 2),
 			set: func(node *blockNode) {
-				if int64(node.height) < svh {
+				if node.height < svh {
 					return
 				}
 
-				if int64(node.height) < svh+svi {
+				if node.height < svh+svi {
 					appendFakeVotes(node, tpb-2, 1, 0)
 					return
 				}
@@ -613,11 +590,11 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "75% with 3 votes",
 			numNodes: svh + (svi * 2),
 			set: func(node *blockNode) {
-				if int64(node.height) <= svh {
+				if node.height <= svh {
 					return
 				}
 
-				if int64(node.height) < svh+svi {
+				if node.height < svh+svi {
 					appendFakeVotes(node, tpb-2, 1, 0)
 					return
 				}
@@ -642,11 +619,11 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "75% with 3 votes blockversion 3",
 			numNodes: svh + (svi * 2),
 			set: func(node *blockNode) {
-				if int64(node.height) <= svh {
+				if node.height <= svh {
 					return
 				}
 
-				if int64(node.height) < svh+svi {
+				if node.height < svh+svi {
 					appendFakeVotes(node, tpb-2, 1, 0)
 					return
 				}
@@ -672,11 +649,11 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 			name:     "75%-1 with 3 votes blockversion 3",
 			numNodes: svh + (svi * 2),
 			set: func(node *blockNode) {
-				if int64(node.height) < svh {
+				if node.height < svh {
 					return
 				}
 
-				if int64(node.height) < svh+svi {
+				if node.height < svh+svi {
 					appendFakeVotes(node, tpb-2, 1, 0)
 					return
 				}
@@ -703,8 +680,8 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 	for _, test := range tests {
 		// Create new BlockChain in order to blow away cache.
 		bc := newFakeChain(params)
-		node := bc.bestNode
-		node.header.StakeVersion = test.startStakeVersion
+		node := bc.bestChain.Tip()
+		node.stakeVersion = test.startStakeVersion
 
 		ticketCount = 0
 
@@ -720,7 +697,7 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 					test.startStakeVersion, 0)
 			}
 
-			bc.bestNode = node
+			bc.bestChain.SetTip(node)
 		}
 
 		res := bc.isVoterMajorityVersion(test.expectedStakeVersion, node)
@@ -729,10 +706,7 @@ func TestIsStakeMajorityVersion(t *testing.T) {
 		}
 
 		// validate calcStakeVersion
-		version, err := bc.calcStakeVersionByNode(node)
-		if err != nil {
-			t.Fatalf("calcStakeVersionByNode: unexpected error: %v", err)
-		}
+		version := bc.calcStakeVersion(node)
 		if version != test.expectedCalcVersion {
 			t.Fatalf("%v calcStakeVersionByNode got %v expected %v",
 				test.name, version, test.expectedCalcVersion)
@@ -776,8 +750,8 @@ func TestLarge(t *testing.T) {
 	for _, test := range tests {
 		// Create new BlockChain in order to blow away cache.
 		bc := newFakeChain(params)
-		node := bc.bestNode
-		node.header.StakeVersion = test.startStakeVersion
+		node := bc.bestChain.Tip()
+		node.stakeVersion = test.startStakeVersion
 
 		for i := int64(1); i <= test.numNodes; i++ {
 			node = newFakeNode(node, test.blockVersion,
@@ -786,7 +760,7 @@ func TestLarge(t *testing.T) {
 			// Override version.
 			appendFakeVotes(node, params.TicketsPerBlock,
 				test.startStakeVersion, 0)
-			bc.bestNode = node
+			bc.bestChain.SetTip(node)
 		}
 
 		for x := 0; x < numRuns; x++ {
@@ -797,12 +771,9 @@ func TestLarge(t *testing.T) {
 			}
 
 			// validate calcStakeVersion
-			version, err := bc.calcStakeVersionByNode(node)
-			if err != nil {
-				t.Fatalf("calcStakeVersionByNode: unexpected error: %v", err)
-			}
+			version := bc.calcStakeVersion(node)
 			if version != test.expectedCalcVersion {
-				t.Fatalf("%v calcStakeVersionByNode got %v expected %v",
+				t.Fatalf("%v calcStakeVersion got %v expected %v",
 					test.name, version, test.expectedCalcVersion)
 			}
 			end := time.Now()

@@ -36,7 +36,7 @@ func makeParams(rt reflect.Type, rv reflect.Value) []interface{} {
 // is suitable for transmission to an RPC server.  The provided command type
 // must be a registered type.  All commands provided by this package are
 // registered by default.
-func MarshalCmd(id interface{}, cmd interface{}) ([]byte, error) {
+func MarshalCmd(rpcVersion string, id interface{}, cmd interface{}) ([]byte, error) {
 	// Look up the cmd type and error out if not registered.
 	rt := reflect.TypeOf(cmd)
 	registerLock.RLock()
@@ -50,7 +50,7 @@ func MarshalCmd(id interface{}, cmd interface{}) ([]byte, error) {
 	// The provided command must not be nil.
 	rv := reflect.ValueOf(cmd)
 	if rv.IsNil() {
-		str := fmt.Sprint("the specified command is nil")
+		str := "the specified command is nil"
 		return nil, makeError(ErrInvalidType, str)
 	}
 
@@ -60,7 +60,7 @@ func MarshalCmd(id interface{}, cmd interface{}) ([]byte, error) {
 	params := makeParams(rt.Elem(), rv.Elem())
 
 	// Generate and marshal the final JSON-RPC request.
-	rawCmd, err := NewRequest(id, method, params)
+	rawCmd, err := NewRequest(rpcVersion, id, method, params)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func typesMaybeCompatible(dest reflect.Type, src reflect.Type) bool {
 		return true
 	}
 
-	// When both types are numeric, they are potentially compatibile.
+	// When both types are numeric, they are potentially compatible.
 	srcKind := src.Kind()
 	destKind := dest.Kind()
 	if isNumeric(destKind) && isNumeric(srcKind) {
@@ -472,7 +472,7 @@ func assignField(paramNum int, fieldName string, dest reflect.Value, src reflect
 			err := json.Unmarshal([]byte(src.String()), &concreteVal)
 			if err != nil {
 				str := fmt.Sprintf("parameter #%d '%s' must "+
-					"be valid JSON which unsmarshals to a %v",
+					"be valid JSON which unmarshals to a %v",
 					paramNum, fieldName, destBaseType)
 				return makeError(ErrInvalidType, str)
 			}

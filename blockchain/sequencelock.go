@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Decred developers
+// Copyright (c) 2017-2018 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -32,16 +32,13 @@ type SequenceLock struct {
 // that does not care about the specific reason the transaction is not a
 // stakebase, rather only if it is one or not.
 func isStakeBaseTx(tx *wire.MsgTx) bool {
-	isStakeBase, _ := stake.IsSSGen(tx)
-	return isStakeBase
+	return stake.IsSSGen(tx)
 }
 
 // calcSequenceLock computes the relative lock times for the passed transaction
 // from the point of view of the block node passed in as the first argument.
 //
 // See the CalcSequenceLock comments for more details.
-//
-// This function MUST be called with the chain state lock held (for writes).
 func (b *BlockChain) calcSequenceLock(node *blockNode, tx *dcrutil.Tx, view *UtxoViewpoint, isActive bool) (*SequenceLock, error) {
 	// A value of -1 for each lock type allows a transaction to be included
 	// in a block at any given height or time.
@@ -55,7 +52,6 @@ func (b *BlockChain) calcSequenceLock(node *blockNode, tx *dcrutil.Tx, view *Utx
 	enforce := isActive && msgTx.Version >= 2
 	if !enforce || IsCoinBaseTx(msgTx) || isStakeBaseTx(msgTx) {
 		return sequenceLock, nil
-
 	}
 
 	for txInIndex, txIn := range msgTx.TxIn {
@@ -68,10 +64,11 @@ func (b *BlockChain) calcSequenceLock(node *blockNode, tx *dcrutil.Tx, view *Utx
 
 		utxo := view.LookupEntry(&txIn.PreviousOutPoint.Hash)
 		if utxo == nil {
-			str := fmt.Sprintf("unable to find unspent output "+
-				"%v referenced from transaction %s:%d",
-				txIn.PreviousOutPoint, tx.Hash(), txInIndex)
-			return sequenceLock, ruleError(ErrMissingTx, str)
+			str := fmt.Sprintf("output %v referenced from "+
+				"transaction %s:%d either does not exist or "+
+				"has already been spent", txIn.PreviousOutPoint,
+				tx.Hash(), txInIndex)
+			return sequenceLock, ruleError(ErrMissingTxOut, str)
 		}
 
 		// Calculate the sequence locks from the point of view of the
@@ -102,17 +99,8 @@ func (b *BlockChain) calcSequenceLock(node *blockNode, tx *dcrutil.Tx, view *Utx
 			if prevInputHeight < 0 {
 				prevInputHeight = 0
 			}
-			blockNode, err := b.ancestorNode(node, prevInputHeight)
-			if err != nil {
-				return sequenceLock, err
-			}
-
-			// Calculate the past median time of the block prior to
-			// the one which included the output being spent.
-			medianTime, err := b.calcPastMedianTime(blockNode)
-			if err != nil {
-				return sequenceLock, err
-			}
+			blockNode := node.Ancestor(prevInputHeight)
+			medianTime := blockNode.CalcPastMedianTime()
 
 			// Calculate the minimum required timestamp based on the
 			// sum of the aforementioned past median time and
@@ -161,7 +149,7 @@ func (b *BlockChain) calcSequenceLock(node *blockNode, tx *dcrutil.Tx, view *Utx
 // This function is safe for concurrent access.
 func (b *BlockChain) CalcSequenceLock(tx *dcrutil.Tx, view *UtxoViewpoint) (*SequenceLock, error) {
 	b.chainLock.Lock()
-	seqLock, err := b.calcSequenceLock(b.bestNode, tx, view, true)
+	seqLock, err := b.calcSequenceLock(b.bestChain.Tip(), tx, view, true)
 	b.chainLock.Unlock()
 	return seqLock, err
 }

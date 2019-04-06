@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2017 The Decred developers
+// Copyright (c) 2015-2019 The Decred developers
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
@@ -9,6 +9,7 @@ import (
 	"compress/bzip2"
 	"encoding/gob"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,15 +21,24 @@ import (
 	"github.com/decred/dcrd/database"
 	_ "github.com/decred/dcrd/database/ffldb"
 	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/wire"
 )
 
 const (
 	// testDbType is the database backend type to use for the tests.
 	testDbType = "ffldb"
-
-	// testDbRoot is the root directory used to create all test databases.
-	testDbRoot = "testdbs"
 )
+
+// calcHash256PRNGIVFromHeader calculates the initialization vector for a
+// Hash256PRNG instance based on using the serialized bytes for the provided
+// header as a seed.
+func calcHash256PRNGIVFromHeader(header *wire.BlockHeader) (chainhash.Hash, error) {
+	hB, err := header.Bytes()
+	if err != nil {
+		return chainhash.Hash{}, err
+	}
+	return CalcHash256PRNGIV(hB), nil
+}
 
 // copyNode copies a stake node so that it can be manipulated for tests.
 func copyNode(n *Node) *Node {
@@ -50,9 +60,9 @@ func copyNode(n *Node) *Node {
 	databaseUndoUpdate := make(UndoTicketDataSlice, len(n.databaseUndoUpdate))
 	copy(databaseUndoUpdate[:], n.databaseUndoUpdate[:])
 	databaseBlockTickets := make([]chainhash.Hash, len(n.databaseBlockTickets))
-	copy(databaseBlockTickets[:], n.databaseBlockTickets[:])
+	copy(databaseBlockTickets, n.databaseBlockTickets[:])
 	nextWinners := make([]chainhash.Hash, len(n.nextWinners))
-	copy(nextWinners[:], n.nextWinners[:])
+	copy(nextWinners, n.nextWinners)
 	var finalState [6]byte
 	copy(finalState[:], n.finalState[:])
 
@@ -84,7 +94,7 @@ func ticketsInBlock(bl *dcrutil.Block) []chainhash.Hash {
 
 // ticketsSpentInBlock finds all the tickets spent in the block.
 func ticketsSpentInBlock(bl *dcrutil.Block) []chainhash.Hash {
-	tickets := make([]chainhash.Hash, 0)
+	tickets := make([]chainhash.Hash, 0, bl.MsgBlock().Header.Voters)
 	for _, stx := range bl.STransactions() {
 		if DetermineTxType(stx.MsgTx()) == TxTypeSSGen {
 			tickets = append(tickets, stx.MsgTx().TxIn[1].PreviousOutPoint.Hash)
@@ -96,7 +106,7 @@ func ticketsSpentInBlock(bl *dcrutil.Block) []chainhash.Hash {
 
 // revokedTicketsInBlock finds all the revoked tickets in the block.
 func revokedTicketsInBlock(bl *dcrutil.Block) []chainhash.Hash {
-	tickets := make([]chainhash.Hash, 0)
+	tickets := make([]chainhash.Hash, 0, bl.MsgBlock().Header.Revocations)
 	for _, stx := range bl.STransactions() {
 		if DetermineTxType(stx.MsgTx()) == TxTypeSSRtx {
 			tickets = append(tickets, stx.MsgTx().TxIn[0].PreviousOutPoint.Hash)
@@ -188,16 +198,23 @@ func nodesEqual(a *Node, b *Node) error {
 		return fmt.Errorf("missedbyblock were not equal between nodes; "+
 			"a: %x, b: %x", a.MissedByBlock(), b.MissedByBlock())
 	}
+	if !reflect.DeepEqual(a.ExpiredByBlock(), b.ExpiredByBlock()) {
+		return fmt.Errorf("expiredbyblock were not equal between nodes; "+
+			"a: %x, b: %x", a.ExpiredByBlock(), b.ExpiredByBlock())
+	}
 
 	return nil
 }
 
 func TestTicketDBLongChain(t *testing.T) {
 	// Declare some useful variables.
-	params := &chaincfg.SimNetParams
+	params := &chaincfg.RegNetParams
 	testBCHeight := int64(1001)
-	filename := filepath.Join("..", "/../blockchain/testdata", "testexpiry.bz2")
+	filename := filepath.Join("testdata", "testexpiry.bz2")
 	fi, err := os.Open(filename)
+	if err != nil {
+		t.Fatalf("failed ot open test data: %v", err)
+	}
 	bcStream := bzip2.NewReader(fi)
 	defer fi.Close()
 
@@ -245,11 +262,66 @@ func TestTicketDBLongChain(t *testing.T) {
 		}
 
 		// In memory addition test.
-		bestNode, err = bestNode.ConnectNode(header,
+		lotteryIV, err := calcHash256PRNGIVFromHeader(&header)
+		if err != nil {
+			t.Fatalf("failed to calc lottery IV: %v", err)
+		}
+		bestNode, err = bestNode.ConnectNode(lotteryIV,
 			ticketsSpentInBlock(block), revokedTicketsInBlock(block),
 			ticketsToAdd)
 		if err != nil {
 			t.Fatalf("couldn't connect node: %v", err.Error())
+		}
+
+		// UndoTicketDataSlice tests
+
+		// Check that spent tickets in undo data are not in the live, missed, or
+		// revoked treaps. Spent only refers to votes, not revocations.
+		voted := bestNode.SpentByBlock()
+		for ie := range voted {
+			if exists := bestNode.ExistsLiveTicket(voted[ie]); exists {
+				t.Errorf("voted ticket in undo data in live treap")
+			}
+			if exists := bestNode.ExistsMissedTicket(voted[ie]); exists {
+				t.Errorf("voted ticket in undo data in missed treap")
+			}
+			if exists := bestNode.ExistsRevokedTicket(voted[ie]); exists {
+				t.Errorf("voted ticket in undo data in revoked treap")
+			}
+		}
+
+		// Check that expired tickets in undo data are in both the expired and
+		// missed treaps. Expired is a subset of missed.
+		expired := bestNode.ExpiredByBlock()
+		for ie := range expired {
+			if exists := bestNode.ExistsExpiredTicket(expired[ie]); !exists {
+				t.Errorf("expired ticket in undo data not in expired treap")
+			}
+			if exists := bestNode.ExistsMissedTicket(expired[ie]); !exists {
+				t.Errorf("expired ticket in undo data not in missed treap")
+			}
+		}
+
+		// Check that missed tickets in undo data are in either the missed or
+		// revoked treap. This is because tickets in undo data flagged as
+		// Revoked are removed from the missed treap and added to the revoked
+		// treap despite still being flagged as Missed.
+		missed := bestNode.MissedByBlock()
+		for ie := range missed {
+			exists := bestNode.ExistsMissedTicket(missed[ie]) ||
+				bestNode.ExistsRevokedTicket(missed[ie])
+			if !exists {
+				t.Errorf("missed ticket in undo data not in missed or revoked treap")
+			}
+		}
+
+		// Verify that each expired ticket is also in missed undo data. The
+		// UndoTicketData for an expired ticket will always have both Missed and
+		// Expired set to true.
+		for ie := range expired {
+			if !hashInSlice(expired[ie], missed) {
+				t.Errorf("expired ticket not found in missed undo data")
+			}
 		}
 
 		nodesForward[i] = bestNode
@@ -267,7 +339,11 @@ func TestTicketDBLongChain(t *testing.T) {
 		blockUndoData := nodesForward[i-1].UndoData()
 
 		// In memory disconnection test.
-		bestNode, err = bestNode.DisconnectNode(header, blockUndoData,
+		lotteryIV, err := calcHash256PRNGIVFromHeader(&header)
+		if err != nil {
+			t.Fatalf("failed to calc lottery IV: %v", err)
+		}
+		bestNode, err = bestNode.DisconnectNode(lotteryIV, blockUndoData,
 			ticketsToAdd, nil)
 		if err != nil {
 			t.Errorf(err.Error())
@@ -327,16 +403,15 @@ func TestTicketDBLongChain(t *testing.T) {
 	/*
 		// Create a new database to store the accepted stake node data into.
 		dbName := "ffldb_staketest"
-		dbPath := filepath.Join(testDbRoot, dbName)
-		_ = os.RemoveAll(dbPath)
+		dbPath, err := ioutil.TempDir("", dbName)
+		if err != nil {
+			t.Fatalf("unable to create test db path: %v", err)
+		}
+		defer os.RemoveAll(dbPath)
 		testDb, err := database.Create(testDbType, dbPath, params.Net)
 		if err != nil {
 			t.Fatalf("error creating db: %v", err)
 		}
-
-		// Setup a teardown.
-		defer os.RemoveAll(dbPath)
-		defer os.RemoveAll(testDbRoot)
 		defer testDb.Close()
 
 		// Load the genesis block and begin testing exported functions.
@@ -513,10 +588,13 @@ func TestTicketDBLongChain(t *testing.T) {
 
 func TestTicketDBGeneral(t *testing.T) {
 	// Declare some useful variables.
-	params := &chaincfg.SimNetParams
+	params := &chaincfg.RegNetParams
 	testBCHeight := int64(168)
-	filename := filepath.Join("..", "/../blockchain/testdata", "blocks0to168.bz2")
+	filename := filepath.Join("testdata", "blocks0to168.bz2")
 	fi, err := os.Open(filename)
+	if err != nil {
+		t.Errorf("Failed to open %s: %v", filename, err)
+	}
 	bcStream := bzip2.NewReader(fi)
 	defer fi.Close()
 
@@ -544,16 +622,15 @@ func TestTicketDBGeneral(t *testing.T) {
 
 	// Create a new database to store the accepted stake node data into.
 	dbName := "ffldb_staketest"
-	dbPath := filepath.Join(testDbRoot, dbName)
-	_ = os.RemoveAll(dbPath)
+	dbPath, err := ioutil.TempDir("", dbName)
+	if err != nil {
+		t.Fatalf("unable to create test db path: %v", err)
+	}
+	defer os.RemoveAll(dbPath)
 	testDb, err := database.Create(testDbType, dbPath, params.Net)
 	if err != nil {
 		t.Fatalf("error creating db: %v", err)
 	}
-
-	// Setup a teardown.
-	defer os.RemoveAll(dbPath)
-	defer os.RemoveAll(testDbRoot)
 	defer testDb.Close()
 
 	// Load the genesis block and begin testing exported functions.
@@ -592,7 +669,11 @@ func TestTicketDBGeneral(t *testing.T) {
 			}
 
 			// In memory addition test.
-			bestNode, err = bestNode.ConnectNode(header,
+			lotteryIV, err := calcHash256PRNGIVFromHeader(&header)
+			if err != nil {
+				return fmt.Errorf("failed to calc lottery IV: %v", err)
+			}
+			bestNode, err = bestNode.ConnectNode(lotteryIV,
 				ticketsSpentInBlock(block), revokedTicketsInBlock(block),
 				ticketsToAdd)
 			if err != nil {
@@ -602,7 +683,7 @@ func TestTicketDBGeneral(t *testing.T) {
 			// Write the new node to db.
 			nodesForward[i] = bestNode
 			blockHash := block.Hash()
-			err := WriteConnectedBestNode(dbTx, bestNode, *blockHash)
+			err = WriteConnectedBestNode(dbTx, bestNode, *blockHash)
 			if err != nil {
 				return fmt.Errorf("failure writing the best node: %v",
 					err.Error())
@@ -644,7 +725,11 @@ func TestTicketDBGeneral(t *testing.T) {
 		formerBestNode := bestNode
 
 		// In memory disconnection test.
-		bestNode, err = bestNode.DisconnectNode(header, blockUndoData,
+		lotteryIV, err := calcHash256PRNGIVFromHeader(&header)
+		if err != nil {
+			t.Fatalf("failed to calc lottery IV: %v", err)
+		}
+		bestNode, err = bestNode.DisconnectNode(lotteryIV, blockUndoData,
 			ticketsToAdd, nil)
 		if err != nil {
 			t.Fatalf(err.Error())
@@ -660,14 +745,18 @@ func TestTicketDBGeneral(t *testing.T) {
 		var bestNodeUsingDB *Node
 		err = testDb.View(func(dbTx database.Tx) error {
 			// Negative test.
-			bestNodeUsingDB, err = formerBestNode.DisconnectNode(header, nil,
+			lotteryIV, err := calcHash256PRNGIVFromHeader(&header)
+			if err != nil {
+				return fmt.Errorf("failed to calc lottery IV: %v", err)
+			}
+			bestNodeUsingDB, err = formerBestNode.DisconnectNode(lotteryIV, nil,
 				nil, nil)
 			if err == nil && formerBestNode.height > 1 {
 				return fmt.Errorf("expected error when no in memory data " +
 					"or dbtx is passed")
 			}
 
-			bestNodeUsingDB, err = formerBestNode.DisconnectNode(header, nil,
+			bestNodeUsingDB, err = formerBestNode.DisconnectNode(lotteryIV, nil,
 				nil, dbTx)
 			return err
 		})
@@ -732,10 +821,18 @@ func TestTicketDBGeneral(t *testing.T) {
 	b162 := testBlockchain[162]
 	n162Test := copyNode(nodesForward[162])
 
+	b161LotteryIV, err := calcHash256PRNGIVFromHeader(&b161.MsgBlock().Header)
+	if err != nil {
+		t.Fatalf("failed to calc lottery IV for b161: %v", err)
+	}
+	b162LotteryIV, err := calcHash256PRNGIVFromHeader(&b162.MsgBlock().Header)
+	if err != nil {
+		t.Fatalf("failed to calc lottery IV for b162: %v", err)
+	}
+
 	// No node.
-	_, err = connectNode(nil, b162.MsgBlock().Header,
-		n162Test.SpentByBlock(), revokedTicketsInBlock(b162),
-		n162Test.NewTickets())
+	_, err = connectNode(nil, b162LotteryIV, n162Test.SpentByBlock(),
+		revokedTicketsInBlock(b162), n162Test.NewTickets())
 	if err == nil {
 		t.Errorf("expect error for no node")
 	}
@@ -743,9 +840,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	// Best node missing ticket in live ticket bucket to spend.
 	n161Copy := copyNode(nodesForward[161])
 	n161Copy.liveTickets.Delete(tickettreap.Key(n162Test.SpentByBlock()[0]))
-	_, err = n161Copy.ConnectNode(b162.MsgBlock().Header,
-		n162Test.SpentByBlock(), revokedTicketsInBlock(b162),
-		n162Test.NewTickets())
+	_, err = n161Copy.ConnectNode(b162LotteryIV, n162Test.SpentByBlock(),
+		revokedTicketsInBlock(b162), n162Test.NewTickets())
 	if err == nil || err.(RuleError).GetCode() != ErrMissingTicket {
 		t.Errorf("unexpected wrong or no error for "+
 			"Best node missing ticket in live ticket bucket to spend: %v", err)
@@ -757,9 +853,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	n161Copy.nextWinners[0] = n161Copy.nextWinners[1]
 	spentInBlock := n162Copy.SpentByBlock()
 	spentInBlock[0] = spentInBlock[1]
-	_, err = n161Copy.ConnectNode(b162.MsgBlock().Header,
-		spentInBlock, revokedTicketsInBlock(b162),
-		n162Test.NewTickets())
+	_, err = n161Copy.ConnectNode(b162LotteryIV, spentInBlock,
+		revokedTicketsInBlock(b162), n162Test.NewTickets())
 	if err == nil || err.(RuleError).GetCode() != ErrMissingTicket {
 		t.Errorf("unexpected wrong or no error for "+
 			"Best node missing ticket in live ticket bucket to spend: %v", err)
@@ -769,8 +864,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	someHash := chainhash.HashH([]byte{0x00})
 	spentInBlock = n162Test.SpentByBlock()
 	spentInBlock[4] = someHash
-	_, err = nodesForward[161].ConnectNode(b162.MsgBlock().Header,
-		spentInBlock, revokedTicketsInBlock(b162), n162Test.NewTickets())
+	_, err = nodesForward[161].ConnectNode(b162LotteryIV, spentInBlock,
+		revokedTicketsInBlock(b162), n162Test.NewTickets())
 	if err == nil || err.(RuleError).GetCode() != ErrUnknownTicketSpent {
 		t.Errorf("unexpected wrong or no error for "+
 			"Test for corrupted spentInBlock: %v", err)
@@ -779,8 +874,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	// Corrupt winners.
 	n161Copy = copyNode(nodesForward[161])
 	n161Copy.nextWinners[4] = someHash
-	_, err = n161Copy.ConnectNode(b162.MsgBlock().Header,
-		spentInBlock, revokedTicketsInBlock(b162), n162Test.NewTickets())
+	_, err = n161Copy.ConnectNode(b162LotteryIV, spentInBlock,
+		revokedTicketsInBlock(b162), n162Test.NewTickets())
 	if err == nil || err.(RuleError).GetCode() != ErrMissingTicket {
 		t.Errorf("unexpected wrong or no error for "+
 			"Corrupt winners: %v", err)
@@ -789,9 +884,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	// Unknown missed ticket.
 	n162Copy = copyNode(nodesForward[162])
 	spentInBlock = n162Copy.SpentByBlock()
-	_, err = nodesForward[161].ConnectNode(b162.MsgBlock().Header,
-		spentInBlock, append(revokedTicketsInBlock(b162), someHash),
-		n162Copy.NewTickets())
+	_, err = nodesForward[161].ConnectNode(b162LotteryIV, spentInBlock,
+		append(revokedTicketsInBlock(b162), someHash), n162Copy.NewTickets())
 	if err == nil || err.(RuleError).GetCode() != ErrMissingTicket {
 		t.Errorf("unexpected wrong or no error for "+
 			"Unknown missed ticket: %v", err)
@@ -800,8 +894,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	// Insert a duplicate new ticket.
 	spentInBlock = n162Test.SpentByBlock()
 	newTicketsDup := []chainhash.Hash{someHash, someHash}
-	_, err = nodesForward[161].ConnectNode(b162.MsgBlock().Header,
-		spentInBlock, revokedTicketsInBlock(b162), newTicketsDup)
+	_, err = nodesForward[161].ConnectNode(b162LotteryIV, spentInBlock,
+		revokedTicketsInBlock(b162), newTicketsDup)
 	if err == nil || err.(RuleError).GetCode() != ErrDuplicateTicket {
 		t.Errorf("unexpected wrong or no error for "+
 			"Insert a duplicate new ticket: %v", err)
@@ -814,8 +908,9 @@ func TestTicketDBGeneral(t *testing.T) {
 	n162Copy.databaseUndoUpdate[0].Missed = false
 	n162Copy.databaseUndoUpdate[0].Spent = false
 	n162Copy.databaseUndoUpdate[0].Revoked = true
-	_, err = n162Copy.DisconnectNode(b161.MsgBlock().Header,
-		n161Copy.UndoData(), n161Copy.NewTickets(), nil)
+
+	_, err = n162Copy.DisconnectNode(b161LotteryIV, n161Copy.UndoData(),
+		n161Copy.NewTickets(), nil)
 	if err == nil {
 		t.Errorf("unexpected wrong or no error for "+
 			"Impossible undo data for disconnecting: %v", err)
@@ -825,8 +920,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	n161Copy = copyNode(nodesForward[161])
 	n162Copy = copyNode(nodesForward[162])
 	n162Copy.databaseUndoUpdate = n162Copy.databaseUndoUpdate[0:3]
-	_, err = n162Copy.DisconnectNode(b161.MsgBlock().Header,
-		n161Copy.UndoData(), n161Copy.NewTickets(), nil)
+	_, err = n162Copy.DisconnectNode(b161LotteryIV, n161Copy.UndoData(),
+		n161Copy.NewTickets(), nil)
 	if err == nil {
 		t.Errorf("unexpected wrong or no error for "+
 			"Missing undo data for disconnecting: %v", err)
@@ -840,8 +935,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	n162Copy.databaseUndoUpdate[0].Missed = true
 	n162Copy.databaseUndoUpdate[0].Spent = false
 	n162Copy.databaseUndoUpdate[0].Revoked = false
-	_, err = n162Copy.DisconnectNode(b161.MsgBlock().Header,
-		n161Copy.UndoData(), n161Copy.NewTickets(), nil)
+	_, err = n162Copy.DisconnectNode(b161LotteryIV, n161Copy.UndoData(),
+		n161Copy.NewTickets(), nil)
 	if err == nil || err.(RuleError).GetCode() != ErrMissingTicket {
 		t.Errorf("unexpected wrong or no error for "+
 			"Unknown undo data for disconnecting (missing): %v", err)
@@ -855,8 +950,8 @@ func TestTicketDBGeneral(t *testing.T) {
 	n162Copy.databaseUndoUpdate[0].Missed = true
 	n162Copy.databaseUndoUpdate[0].Spent = false
 	n162Copy.databaseUndoUpdate[0].Revoked = true
-	_, err = n162Copy.DisconnectNode(b161.MsgBlock().Header,
-		n161Copy.UndoData(), n161Copy.NewTickets(), nil)
+	_, err = n162Copy.DisconnectNode(b161LotteryIV, n161Copy.UndoData(),
+		n161Copy.NewTickets(), nil)
 	if err == nil || err.(RuleError).GetCode() != ErrMissingTicket {
 		t.Errorf("unexpected wrong or no error for "+
 			"Unknown undo data for disconnecting (revoked): %v", err)
